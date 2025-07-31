@@ -77,17 +77,14 @@ ${localize('com_ui_total_tokens')}: ${costData.totalTokens.toLocaleString()}
 ${localize('com_ui_last_updated')}: ${new Date(costData.lastUpdated).toLocaleTimeString()}`;
 
   return (
-    <TooltipAnchor
-      description={tooltipText}
-      render={
-        <div className="flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors hover:bg-surface-hover">
-          <span className="text-text-tertiary">💰</span>
-          <span className={`font-medium ${getCostColorClass(costData.totalCostRaw)}`}>
-            {costData.totalCost}
-          </span>
-        </div>
-      }
-    />
+    <TooltipAnchor description={tooltipText}>
+      <div className="flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors hover:bg-surface-hover">
+        <span className="text-text-tertiary">💰</span>
+        <span className={`font-medium ${getCostColorClass(costData.totalCostRaw)}`}>
+          {costData.totalCost}
+        </span>
+      </div>
+    </TooltipAnchor>
   );
 }
 
