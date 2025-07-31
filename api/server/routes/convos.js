@@ -12,9 +12,9 @@ const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 const { importConversations } = require('~/server/utils/import');
 const { deleteToolCalls } = require('~/models/ToolCall');
 const getLogStores = require('~/cache/getLogStores');
-const { getMultipleConversationCosts } = require('~/server/services/ConversationCost');
 const {
   getConversationCostDisplayFromMessages,
+  getMultipleConversationCosts,
 } = require('~/server/services/ConversationCostDynamic');
 
 const assistantClients = {

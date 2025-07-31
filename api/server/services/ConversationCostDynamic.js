@@ -219,7 +219,59 @@ function getConversationCostDisplayFromMessages(messages) {
   }
 }
 
+/**
+ * Get costs for multiple conversations in batch
+ * @param {string[]} conversationIds - Array of conversation IDs
+ * @param {string} userId - User ID
+ * @returns {Object} Map of conversationId to cost display data
+ */
+async function getMultipleConversationCosts(conversationIds, userId) {
+  try {
+    const { getMessages } = require('~/models/Message');
+    const results = {};
+
+    // Process in batches to avoid overwhelming the database
+    const batchSize = 10;
+    for (let i = 0; i < conversationIds.length; i += batchSize) {
+      const batch = conversationIds.slice(i, i + batchSize);
+      
+      // Process batch in parallel
+      await Promise.all(
+        batch.map(async (conversationId) => {
+          try {
+            const messages = await getMessages({
+              user: userId,
+              conversationId: conversationId,
+            });
+
+            if (messages && messages.length > 0) {
+              const costDisplay = getConversationCostDisplayFromMessages(messages);
+              if (costDisplay) {
+                costDisplay.conversationId = conversationId;
+                results[conversationId] = costDisplay;
+              } else {
+                results[conversationId] = null;
+              }
+            } else {
+              results[conversationId] = null;
+            }
+          } catch (error) {
+            logger.error(`Error calculating cost for conversation ${conversationId}:`, error);
+            results[conversationId] = null;
+          }
+        })
+      );
+    }
+
+    return results;
+  } catch (error) {
+    logger.error('Error getting multiple conversation costs:', error);
+    return {};
+  }
+}
+
 module.exports = {
   calculateConversationCostFromMessages,
   getConversationCostDisplayFromMessages,
+  getMultipleConversationCosts,
 };
