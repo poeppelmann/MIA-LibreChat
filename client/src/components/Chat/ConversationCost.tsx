@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { useRecoilValue } from 'recoil';
 import { Constants } from 'librechat-data-provider';
-import { TooltipAnchor } from '~/components/ui';
+import { TooltipAnchor } from '@librechat/client';
 import { useConversationCost } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
