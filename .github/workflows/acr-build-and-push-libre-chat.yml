@@ -13,15 +13,6 @@ permissions:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - target: api-build
-            file: Dockerfile.multi
-            image_name: mia-libre-chat-api
-          - target: node
-            file: Dockerfile
-            image_name: mia-libre-chat
 
     steps:
       - name: Checkout code
@@ -44,30 +35,20 @@ jobs:
         run: |
           az acr login --name ${{ vars.ACR_NAME }}
 
-      # Set up QEMU for multi-arch build
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      # Set up Docker Buildx
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
       # Prepare the environment
       - name: Prepare environment
         run: |
           cp .env.example .env
 
-      # Build and push Docker images for each target
-      - name: Build and push Docker images
+      # Build and push Docker image
+      - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ${{ matrix.file }}
+          file: Dockerfile
           push: true
           registries: ${{ vars.ACR_REGISTRY_SERVER }}
           tags: |
-            ${{ vars.ACR_REGISTRY_SERVER }}/${{ matrix.image_name }}:${{ env.LATEST_TAG }}
-            ${{ vars.ACR_REGISTRY_SERVER }}/${{ matrix.image_name }}:latest
-            ${{ vars.ACR_REGISTRY_SERVER }}/${{ matrix.image_name }}:${{ github.sha }}
-          platforms: linux/amd64,linux/arm64
-          target: ${{ matrix.target }}
+            ${{ vars.ACR_REGISTRY_SERVER }}/mia-libre-chat:${{ env.LATEST_TAG }}
+            ${{ vars.ACR_REGISTRY_SERVER }}/mia-libre-chat:latest
+            ${{ vars.ACR_REGISTRY_SERVER }}/mia-libre-chat:${{ github.sha }}
