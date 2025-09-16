@@ -5,6 +5,7 @@ export enum FileSources {
   firebase = 'firebase',
   azure = 'azure',
   azure_blob = 'azure_blob',
+  azure_blob_private = 'azure_blob_private',
   openai = 'openai',
   s3 = 's3',
   vectordb = 'vectordb',
