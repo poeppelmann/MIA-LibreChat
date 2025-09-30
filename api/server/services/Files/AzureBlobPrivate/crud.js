@@ -3,18 +3,13 @@ const path = require('path');
 const mime = require('mime');
 const axios = require('axios');
 const fetch = require('node-fetch');
-const { 
-  BlobServiceClient, 
-  BlobSASPermissions, 
-  generateBlobSASQueryParameters, 
-  StorageSharedKeyCredential 
-} = require('@azure/storage-blob');
+const { BlobServiceClient } = require('@azure/storage-blob');
+const { WorkloadIdentityCredential } = require('@azure/identity');
 const { logger } = require('~/config');
 
 const defaultBasePath = 'images';
 const { 
   AZURE_PRIVATE_STORAGE_ACCOUNT_NAME,
-  AZURE_PRIVATE_STORAGE_ACCOUNT_KEY,
   AZURE_PRIVATE_CONTAINER_NAME = 'files',
 } = process.env;
 
@@ -23,144 +18,91 @@ let blobServiceClient = null;
 let containerClient = null;
 
 /**
- * Initializes the Azure Blob Service client for private storage with signed URLs.
+ * Initializes the Azure Blob Service client for private storage using Workload Identity.
+ * This implementation ONLY uses WorkloadIdentityCredential for AKS production environments.
  */
 const initializeAzureBlobPrivateService = () => {
   if (blobServiceClient) {
     return blobServiceClient;
   }
 
-  if (AZURE_PRIVATE_STORAGE_ACCOUNT_NAME && AZURE_PRIVATE_STORAGE_ACCOUNT_KEY && AZURE_PRIVATE_CONTAINER_NAME) {
-    const url = `https://${AZURE_PRIVATE_STORAGE_ACCOUNT_NAME}.blob.core.windows.net`;
-    const credential = new StorageSharedKeyCredential(AZURE_PRIVATE_STORAGE_ACCOUNT_NAME, AZURE_PRIVATE_STORAGE_ACCOUNT_KEY);
+  if (!AZURE_PRIVATE_STORAGE_ACCOUNT_NAME || !AZURE_PRIVATE_CONTAINER_NAME) {
+    throw new Error('Azure Blob Private: Missing required configuration. Provide AZURE_PRIVATE_STORAGE_ACCOUNT_NAME and AZURE_PRIVATE_CONTAINER_NAME');
+  }
+
+  const url = `https://${AZURE_PRIVATE_STORAGE_ACCOUNT_NAME}.blob.core.windows.net`;
+  
+  try {
+    // Use WorkloadIdentityCredential for AKS production environment
+    const credential = new WorkloadIdentityCredential();
     blobServiceClient = new BlobServiceClient(url, credential);
-  } else {
-    throw new Error('Azure Blob Private: Missing required configuration. Provide AZURE_STORAGE_ACCOUNT_NAME, AZURE_STORAGE_ACCOUNT_KEY and AZURE_PRIVATE_CONTAINER_NAME');
+    logger.info('Azure Blob Private Service initialized using WorkloadIdentityCredential');
+  } catch (error) {
+    logger.error('Failed to initialize with WorkloadIdentityCredential:', error);
+    throw new Error('Azure Blob Private: Failed to initialize with WorkloadIdentityCredential. Ensure the pod has proper Workload Identity permissions and is running in AKS with Workload Identity enabled.');
   }
 
   containerClient = blobServiceClient.getContainerClient(AZURE_PRIVATE_CONTAINER_NAME);
-  logger.info('Azure Blob Private Service initialized');
   return blobServiceClient;
 };
 
-/**
- * Creates a SAS read string for private blob access.
- * @param {string} key - The Azure storage account key.
- * @param {string} accountName - The Azure storage account name.
- * @param {string} containerName - The container name.
- * @param {number} duration - Duration in minutes (default: 5) after which the SAS URL will expire.
- * @returns {string} The SAS query parameters.
- */
-function createSASReadString(key, accountName, containerName, duration = 5) {
-  const permissions = new BlobSASPermissions();
-  permissions.read = true;
 
-  const currentDateTime = new Date();
-  const expiryDateTime = new Date(currentDateTime.setMinutes(currentDateTime.getMinutes() + duration));
-  
-  const blobSasModel = {
-    containerName,
-    permissions,
-    expiresOn: expiryDateTime
-  };
-
-  const credential = new StorageSharedKeyCredential(accountName, key);
-  return generateBlobSASQueryParameters(blobSasModel, credential);
-}
 
 /**
- * Creates a SAS write string for private blob upload.
+ * Gets the direct Azure Blob Storage URL for a private blob.
  * @param {string} blobName - The blob name.
- * @param {string} key - The Azure storage account key.
- * @param {string} accountName - The Azure storage account name.
  * @param {string} containerName - The container name.
- * @param {number} duration - Duration in minutes (default: 5) after which the SAS URL will expire.
- * @returns {string} The SAS URL for upload.
+ * @returns {string} The direct Azure Blob Storage URL.
  */
-async function createSASWriteString(blobName, key, accountName, containerName, duration = 5) {
-  const permissions = new BlobSASPermissions();
-  permissions.write = true;
-
-  const currentDateTime = new Date();
-  const expiryDateTime = new Date(currentDateTime.setMinutes(currentDateTime.getMinutes() + duration));
-  
-  const blobSasModel = {
-    containerName,
-    permissions,
-    expiresOn: expiryDateTime
-  };
-
-  const credential = new StorageSharedKeyCredential(accountName, key);
-  const sasQueryParams = generateBlobSASQueryParameters(blobSasModel, credential);
-  
-  const tempBlockBlobClient = containerClient.getBlockBlobClient(blobName);
-  return `${tempBlockBlobClient.url}?${sasQueryParams}`;
+function getDirectBlobUrl(blobName, containerName) {
+  // Return the direct Azure Blob Storage URL
+  return `https://${AZURE_PRIVATE_STORAGE_ACCOUNT_NAME}.blob.core.windows.net/${containerName}/${blobName}`;
 }
 
+
+
 /**
- * Gets a signed download URL for a private blob.
+ * Uploads a buffer directly to Azure Blob Storage using Managed Identity.
  * @param {string} blobName - The blob name.
- * @param {string} key - The Azure storage account key.
- * @param {string} accountName - The Azure storage account name.
- * @param {string} containerName - The container name.
- * @param {number} duration - Duration in minutes (default: 5).
- * @returns {string} The signed download URL.
- */
-function getSignedDownloadUrl(blobName, key, accountName, containerName, duration = 5) {
-  const blockBlobClient = containerClient.getBlockBlobClient(blobName);
-  const sasQueryParams = createSASReadString(key, accountName, containerName, duration);
-  return `${blockBlobClient.url}?${sasQueryParams}`;
-}
-
-/**
- * Uploads a file directly to Azure Blob Storage using signed URL.
- * @param {string} url - The signed upload URL.
- * @param {string} filePath - The local file path.
- * @returns {Promise<void>}
- */
-async function uploadFileToSignedUrl(url, filePath) {
-  const size = fs.statSync(filePath).size;
-  const contentType = mime.getType(filePath) || 'application/octet-stream';
-
-  await fetch(url, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': contentType,
-      'Content-Length': size,
-      'x-ms-blob-type': 'BlockBlob'
-    },
-    body: fs.readFileSync(filePath)
-  });
-}
-
-/**
- * Uploads a buffer directly to Azure Blob Storage using signed URL.
- * @param {string} url - The signed upload URL.
  * @param {Buffer} buffer - The buffer to upload.
  * @param {string} contentType - The content type.
  * @returns {Promise<void>}
  */
-async function uploadBufferToSignedUrl(url, buffer, contentType = 'application/octet-stream') {
-  await fetch(url, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': contentType,
-      'Content-Length': buffer.length,
-      'x-ms-blob-type': 'BlockBlob'
-    },
-    body: buffer
+async function uploadBufferDirectly(blobName, buffer, contentType = 'application/octet-stream') {
+  const blockBlobClient = containerClient.getBlockBlobClient(blobName);
+  await blockBlobClient.upload(buffer, buffer.length, {
+    blobHTTPHeaders: {
+      blobContentType: contentType
+    }
   });
 }
 
 /**
- * Uploads a buffer to Azure Blob Private Storage using signed URLs.
+ * Uploads a file directly to Azure Blob Storage using Managed Identity.
+ * @param {string} blobName - The blob name.
+ * @param {string} filePath - The local file path.
+ * @returns {Promise<void>}
+ */
+async function uploadFileDirectly(blobName, filePath) {
+  const blockBlobClient = containerClient.getBlockBlobClient(blobName);
+  const contentType = mime.getType(filePath) || 'application/octet-stream';
+  
+  await blockBlobClient.uploadFile(filePath, {
+    blobHTTPHeaders: {
+      blobContentType: contentType
+    }
+  });
+}
+
+/**
+ * Uploads a buffer to Azure Blob Private Storage using Workload Identity.
  * @param {Object} params
  * @param {string} params.userId - The user's id.
  * @param {Buffer} params.buffer - The buffer to upload.
  * @param {string} params.fileName - The name of the file.
  * @param {string} [params.basePath='images'] - The base folder within the container.
  * @param {string} [params.containerName] - The Azure Blob container name.
- * @returns {Promise<string>} The signed download URL of the uploaded blob.
+ * @returns {Promise<string>} The direct Azure Blob Storage URL of the uploaded blob.
  */
 async function saveBufferToAzureBlobPrivate({
   userId,
@@ -178,24 +120,11 @@ async function saveBufferToAzureBlobPrivate({
     const blobPath = `${basePath}/${userId}/${fileName}`;
     const contentType = mime.getType(fileName) || 'application/octet-stream';
     
-    // Generate signed upload URL
-    const uploadUrl = await createSASWriteString(
-      blobPath, 
-      AZURE_PRIVATE_STORAGE_ACCOUNT_KEY, 
-      AZURE_PRIVATE_STORAGE_ACCOUNT_NAME, 
-      containerName
-    );
+    // Upload buffer using Workload Identity
+    await uploadBufferDirectly(blobPath, buffer, contentType);
     
-    // Upload buffer using signed URL
-    await uploadBufferToSignedUrl(uploadUrl, buffer, contentType);
-    
-    // Return signed download URL
-    return getSignedDownloadUrl(
-      blobPath, 
-      AZURE_PRIVATE_STORAGE_ACCOUNT_KEY, 
-      AZURE_PRIVATE_STORAGE_ACCOUNT_NAME, 
-      containerName
-    );
+    // Return direct Azure Blob Storage URL
+    return getDirectBlobUrl(blobPath, containerName);
   } catch (error) {
     logger.error('[saveBufferToAzureBlobPrivate] Error uploading buffer:', error);
     throw error;
@@ -230,13 +159,13 @@ async function saveURLToAzureBlobPrivate({
 }
 
 /**
- * Retrieves a signed download URL from Azure Blob Private Storage.
+ * Retrieves a download URL from Azure Blob Private Storage.
  * @param {Object} params
  * @param {string} params.fileName - The file name.
  * @param {string} [params.basePath='images'] - The base folder used during upload.
  * @param {string} [params.userId] - If files are stored in a user-specific directory.
  * @param {string} [params.containerName] - The Azure Blob container name.
- * @returns {Promise<string>} The signed download URL.
+ * @returns {Promise<string>} The direct Azure Blob Storage URL.
  */
 async function getAzureBlobPrivateURL({ 
   fileName, 
@@ -248,14 +177,9 @@ async function getAzureBlobPrivateURL({
     initializeAzureBlobPrivateService();
     const blobPath = userId ? `${basePath}/${userId}/${fileName}` : `${basePath}/${fileName}`;
     
-    return getSignedDownloadUrl(
-      blobPath, 
-      AZURE_PRIVATE_STORAGE_ACCOUNT_KEY, 
-      AZURE_PRIVATE_STORAGE_ACCOUNT_NAME, 
-      containerName
-    );
+    return getDirectBlobUrl(blobPath, containerName);
   } catch (error) {
-    logger.error('[getAzureBlobPrivateURL] Error retrieving signed URL:', error);
+    logger.error('[getAzureBlobPrivateURL] Error retrieving URL:', error);
     throw error;
   }
 }
@@ -289,14 +213,14 @@ async function deleteFileFromAzureBlobPrivate(req, file) {
 }
 
 /**
- * Uploads a file from the local file system to Azure Blob Private Storage using signed URLs.
+ * Uploads a file from the local file system to Azure Blob Private Storage using Workload Identity.
  * @param {Object} params
  * @param {object} params.req - The Express request object.
  * @param {Express.Multer.File} params.file - The file object.
  * @param {string} params.file_id - The file id.
  * @param {string} [params.basePath='images'] - The base folder within the container.
  * @param {string} [params.containerName] - The Azure Blob container name.
- * @returns {Promise<{ filepath: string, bytes: number }>} An object containing the signed download URL and its byte size.
+ * @returns {Promise<{ filepath: string, bytes: number }>} An object containing the direct Azure Blob Storage URL and its byte size.
  */
 async function uploadFileToAzureBlobPrivate({
   req,
@@ -318,24 +242,11 @@ async function uploadFileToAzureBlobPrivate({
     // Create the container if it doesn't exist (private access)
     await containerClient.createIfNotExists();
     
-    // Generate signed upload URL
-    const uploadUrl = await createSASWriteString(
-      blobPath, 
-      AZURE_PRIVATE_STORAGE_ACCOUNT_KEY, 
-      AZURE_PRIVATE_STORAGE_ACCOUNT_NAME, 
-      containerName
-    );
+    // Upload file using Workload Identity
+    await uploadFileDirectly(blobPath, inputFilePath);
     
-    // Upload file using signed URL
-    await uploadFileToSignedUrl(uploadUrl, inputFilePath);
-    
-    // Generate signed download URL for return
-    const downloadUrl = getSignedDownloadUrl(
-      blobPath, 
-      AZURE_PRIVATE_STORAGE_ACCOUNT_KEY, 
-      AZURE_PRIVATE_STORAGE_ACCOUNT_NAME, 
-      containerName
-    );
+    // Generate direct Azure Blob Storage URL for return
+    const downloadUrl = getDirectBlobUrl(blobPath, containerName);
     
     return { filepath: downloadUrl, bytes };
   } catch (error) {
@@ -347,17 +258,18 @@ async function uploadFileToAzureBlobPrivate({
 /**
  * Retrieves a readable stream for a blob from Azure Blob Private Storage.
  * @param {object} _req - The Express request object.
- * @param {string} fileURL - The signed URL of the blob.
+ * @param {string} fileURL - The direct Azure Blob Storage URL of the blob.
  * @returns {Promise<ReadableStream>} A readable stream of the blob.
  */
 async function getAzureBlobPrivateFileStream(_req, fileURL) {
   try {
-    const response = await axios({
-      method: 'get',
-      url: fileURL,
-      responseType: 'stream',
-    });
-    return response.data;
+    // Extract blob name from the Azure Blob Storage URL
+    const blobName = AZURE_PRIVATE_CONTAINER_NAME;
+    
+    // Use direct blob client with Workload Identity
+    const blobClient = containerClient.getBlobClient(blobName);
+    const downloadResponse = await blobClient.download();
+    return downloadResponse.readableStreamBody;
   } catch (error) {
     logger.error('[getAzureBlobPrivateFileStream] Error getting blob stream:', error);
     throw error;
@@ -371,4 +283,6 @@ module.exports = {
   deleteFileFromAzureBlobPrivate,
   uploadFileToAzureBlobPrivate,
   getAzureBlobPrivateFileStream,
+  uploadBufferDirectly,
+  uploadFileDirectly,
 };
