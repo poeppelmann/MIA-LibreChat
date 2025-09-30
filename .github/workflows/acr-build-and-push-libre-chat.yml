@@ -20,7 +20,9 @@ jobs:
       - name: Azure login
         uses: azure/login@v2
         with:
+          # Thats the client id of the github actions User Assigned Identity
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          # Thats the tenant id of the github actions User Assigned Identity
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           enable-AzPSSession: true
@@ -28,6 +30,11 @@ jobs:
       - name: Login to ACR
         run: |
           az acr login --name ${{ vars.ACR_NAME }}
+
+        # Prepare the environment
+      - name: Prepare environment
+        run: |
+          cp .env.example .env
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
