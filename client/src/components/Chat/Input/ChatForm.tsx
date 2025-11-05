@@ -12,6 +12,7 @@ import {
 import {
   useTextarea,
   useAutoSave,
+  useLocalize,
   useRequiresKey,
   useHandleKeyUp,
   useQueryParams,
@@ -38,6 +39,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
   const submitButtonRef = useRef<HTMLButtonElement>(null);
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
   useFocusChatEffect(textAreaRef);
+  const localize = useLocalize();
 
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [, setIsScrollable] = useState(false);
@@ -259,6 +261,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
         <div className={cn('flex w-full items-center', isRTL && 'flex-row-reverse')}>
           {showPlusPopover && !isAssistantsEndpoint(endpoint) && (
             <Mention
+              conversation={conversation}
               setShowMentionPopover={setShowPlusPopover}
               newConversation={generateConversation}
               textAreaRef={textAreaRef}
@@ -269,6 +272,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
           )}
           {showMentionPopover && (
             <Mention
+              conversation={conversation}
               setShowMentionPopover={setShowMentionPopover}
               newConversation={newConversation}
               textAreaRef={textAreaRef}
@@ -316,6 +320,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
                     handleAndroidEdgeKeyboardFocusFix();
                     setIsTextAreaFocused(true);
                   }}
+                  aria-label={localize('com_ui_message_input')}
                   onBlur={() => {
                     handleAndroidEdgeKeyboardBlurFix();
                     setIsTextAreaFocused(false);
