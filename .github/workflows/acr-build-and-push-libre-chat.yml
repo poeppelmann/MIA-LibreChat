@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - feat/MIA-21-blob-storage-signed-url-upload
   workflow_dispatch:
 
 permissions:
@@ -17,10 +18,17 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Fetch tags and set the latest tag
+        run: |
+          git fetch --tags
+          echo "LATEST_TAG=$(git describe --tags `git rev-list --tags --max-count=1`)" >> $GITHUB_ENV
+
       - name: Azure login
         uses: azure/login@v2
         with:
+          # Thats the client id of the github actions User Assigned Identity
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          # Thats the tenant id of the github actions User Assigned Identity
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           enable-AzPSSession: true
@@ -29,13 +37,20 @@ jobs:
         run: |
           az acr login --name ${{ vars.ACR_NAME }}
 
+      # Prepare the environment
+      - name: Prepare environment
+        run: |
+          cp .env.example .env
+
+      # Build and push Docker image
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
-          context: ./
-          file: ./Dockerfile.multi
+          context: .
+          file: Dockerfile
           push: true
           registries: ${{ vars.ACR_REGISTRY_SERVER }}
           tags: |
-            ${{ vars.ACR_REGISTRY_SERVER }}/mia-libre-chat:${{ github.sha }}
+            ${{ vars.ACR_REGISTRY_SERVER }}/mia-libre-chat:${{ env.LATEST_TAG }}
             ${{ vars.ACR_REGISTRY_SERVER }}/mia-libre-chat:latest
+            ${{ vars.ACR_REGISTRY_SERVER }}/mia-libre-chat:${{ github.sha }}

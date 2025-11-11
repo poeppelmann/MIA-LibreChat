@@ -48,6 +48,17 @@ const {
   prepareAzureImageURL,
   processAzureAvatar,
 } = require('./Azure');
+const {
+  saveBufferToAzureBlobPrivate,
+  saveURLToAzureBlobPrivate,
+  getAzureBlobPrivateURL,
+  deleteFileFromAzureBlobPrivate,
+  uploadFileToAzureBlobPrivate,
+  getAzureBlobPrivateFileStream,
+  uploadImageToAzureBlobPrivate,
+  prepareAzureBlobPrivateImageURL,
+  processAzureBlobPrivateAvatar,
+} = require('./AzureBlobPrivate');
 const { uploadOpenAIFile, deleteOpenAIFile, getOpenAIFileStream } = require('./OpenAI');
 const { getCodeOutputDownloadStream, uploadCodeEnvFile } = require('./Code');
 const { uploadVectors, deleteVectors } = require('./VectorDB');
@@ -114,6 +125,23 @@ const azureStrategy = () => ({
   processAvatar: processAzureAvatar,
   handleImageUpload: uploadImageToAzure,
   getDownloadStream: getAzureFileStream,
+});
+
+/**
+ * Azure Blob Private Storage Strategy Functions
+ * Uses signed URLs for secure private access
+ *
+ * */
+const azureBlobPrivateStrategy = () => ({
+  handleFileUpload: uploadFileToAzureBlobPrivate,
+  saveURL: saveURLToAzureBlobPrivate,
+  getFileURL: getAzureBlobPrivateURL,
+  deleteFile: deleteFileFromAzureBlobPrivate,
+  saveBuffer: saveBufferToAzureBlobPrivate,
+  prepareImagePayload: prepareAzureBlobPrivateImageURL,
+  processAvatar: processAzureBlobPrivateAvatar,
+  handleImageUpload: uploadImageToAzureBlobPrivate,
+  getDownloadStream: getAzureBlobPrivateFileStream,
 });
 
 /**
@@ -258,6 +286,8 @@ const getStrategyFunctions = (fileSource) => {
     return openAIStrategy();
   } else if (fileSource === FileSources.azure_blob) {
     return azureStrategy();
+  } else if (fileSource === FileSources.azure_blob_private) {
+    return azureBlobPrivateStrategy();
   } else if (fileSource === FileSources.vectordb) {
     return vectorStrategy();
   } else if (fileSource === FileSources.s3) {
