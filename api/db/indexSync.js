@@ -33,12 +33,16 @@ class MeiliSearchClient {
 }
 
 /**
- * Deletes documents from MeiliSearch index that are missing the user field
+ * Deletes documents from MeiliSearch index that are missing the user field.
+ * Without the user field, documents are excluded by the per-user filter and
+ * become unsearchable; removing them lets the next sync re-index them with the
+ * user field populated.
  * @param {import('meilisearch').Index} index - MeiliSearch index instance
  * @param {string} indexName - Name of the index for logging
+ * @param {string} primaryKey - Primary key field on the documents (e.g. messageId, conversationId)
  * @returns {Promise<number>} - Number of documents deleted
  */
-async function deleteDocumentsWithoutUserField(index, indexName) {
+async function deleteDocumentsWithoutUserField(index, indexName, primaryKey) {
   let deletedCount = 0;
   let offset = 0;
   const batchSize = 1000;
@@ -47,14 +51,17 @@ async function deleteDocumentsWithoutUserField(index, indexName) {
     while (true) {
       const searchResult = await index.search('', {
         limit: batchSize,
-        offset: offset,
+        offset,
       });
 
       if (searchResult.hits.length === 0) {
         break;
       }
 
-      const idsToDelete = searchResult.hits.filter((hit) => !hit.user).map((hit) => hit.id);
+      const idsToDelete = searchResult.hits
+        .filter((hit) => !hit.user)
+        .map((hit) => hit[primaryKey])
+        .filter((id) => id != null);
 
       if (idsToDelete.length > 0) {
         logger.info(
@@ -68,7 +75,8 @@ async function deleteDocumentsWithoutUserField(index, indexName) {
         break;
       }
 
-      offset += batchSize;
+      // Deleted documents shrink the index; advance offset only by the kept hits.
+      offset += searchResult.hits.length - idsToDelete.length;
     }
 
     if (deletedCount > 0) {
@@ -79,6 +87,19 @@ async function deleteDocumentsWithoutUserField(index, indexName) {
   }
 
   return deletedCount;
+}
+
+/**
+ * Returns true if any indexed document is missing the `user` field. Scans up to
+ * `sampleSize` hits because checking only the first hit can miss orphans when
+ * newer documents (with the user field) sort first.
+ * @param {import('meilisearch').Index} index
+ * @param {number} sampleSize
+ * @returns {Promise<boolean>}
+ */
+async function indexHasOrphanedDocs(index, sampleSize = 200) {
+  const searchResult = await index.search('', { limit: sampleSize });
+  return searchResult.hits.some((hit) => !hit.user);
 }
 
 /**
@@ -107,8 +128,7 @@ async function ensureFilterableAttributes(client) {
 
       // Check if existing documents have user field indexed
       try {
-        const searchResult = await messagesIndex.search('', { limit: 1 });
-        if (searchResult.hits.length > 0 && !searchResult.hits[0].user) {
+        if (await indexHasOrphanedDocs(messagesIndex)) {
           logger.info(
             '[indexSync] Existing messages missing user field, will clean up orphaned documents...',
           );
@@ -139,8 +159,7 @@ async function ensureFilterableAttributes(client) {
 
       // Check if existing documents have user field indexed
       try {
-        const searchResult = await convosIndex.search('', { limit: 1 });
-        if (searchResult.hits.length > 0 && !searchResult.hits[0].user) {
+        if (await indexHasOrphanedDocs(convosIndex)) {
           logger.info(
             '[indexSync] Existing conversations missing user field, will clean up orphaned documents...',
           );
@@ -155,23 +174,43 @@ async function ensureFilterableAttributes(client) {
       }
     }
 
-    // If either index has orphaned documents, clean them up (but don't force resync)
+    // If either index has orphaned documents, remove them. The caller will then
+    // reset MongoDB _meiliIndex flags so syncWithMeili re-adds them with the
+    // user field populated; otherwise they'd stay deleted in Meili because
+    // sync only touches docs marked _meiliIndex !== true.
     if (hasOrphanedDocs) {
+      let deletedTotal = 0;
       try {
         const messagesIndex = client.index('messages');
-        await deleteDocumentsWithoutUserField(messagesIndex, 'messages');
+        deletedTotal += await deleteDocumentsWithoutUserField(
+          messagesIndex,
+          'messages',
+          'messageId',
+        );
       } catch (error) {
         logger.debug('[indexSync] Could not clean up messages:', error.message);
       }
 
       try {
         const convosIndex = client.index('convos');
-        await deleteDocumentsWithoutUserField(convosIndex, 'convos');
+        deletedTotal += await deleteDocumentsWithoutUserField(
+          convosIndex,
+          'convos',
+          'conversationId',
+        );
       } catch (error) {
         logger.debug('[indexSync] Could not clean up convos:', error.message);
       }
 
-      logger.info('[indexSync] Orphaned documents cleaned up without forcing resync.');
+      if (deletedTotal === 0) {
+        // Detection found orphans but cleanup deleted nothing — treat as no
+        // orphans so we don't unnecessarily wipe _meiliIndex flags.
+        hasOrphanedDocs = false;
+      } else {
+        logger.info(
+          `[indexSync] Cleaned up ${deletedTotal} orphaned documents. Forcing re-sync to restore them with the user field.`,
+        );
+      }
     }
 
     if (settingsUpdated) {
@@ -213,19 +252,22 @@ async function performSync(flowManager, flowId, flowType) {
     }
 
     /** Ensures indexes have proper filterable attributes configured */
-    const { settingsUpdated, orphanedDocsFound: _orphanedDocsFound } =
-      await ensureFilterableAttributes(client);
+    const { settingsUpdated, orphanedDocsFound } = await ensureFilterableAttributes(client);
 
     let messagesSync = false;
     let convosSync = false;
 
-    // Only reset flags if settings were actually updated (not just for orphaned doc cleanup)
-    if (settingsUpdated) {
+    // Reset flags when settings were updated, or when orphaned docs were cleaned
+    // up — in that case the MongoDB docs still have _meiliIndex: true, so without
+    // resetting, syncWithMeili would skip them and they'd stay missing from Meili.
+    const forceResync = settingsUpdated || orphanedDocsFound;
+    if (forceResync) {
       logger.info(
-        '[indexSync] Settings updated. Forcing full re-sync to reindex with new configuration...',
+        settingsUpdated
+          ? '[indexSync] Settings updated. Forcing full re-sync to reindex with new configuration...'
+          : '[indexSync] Orphaned documents removed. Forcing re-sync to restore them with the user field...',
       );
 
-      // Reset sync flags to force full re-sync
       await batchResetMeiliFlags(Message.collection);
       await batchResetMeiliFlags(Conversation.collection);
     }
@@ -233,7 +275,7 @@ async function performSync(flowManager, flowId, flowType) {
     // Check if we need to sync messages
     logger.info('[indexSync] Requesting message sync progress...');
     const messageProgress = await Message.getSyncProgress();
-    if (!messageProgress.isComplete || settingsUpdated) {
+    if (!messageProgress.isComplete || forceResync) {
       logger.info(
         `[indexSync] Messages need syncing: ${messageProgress.totalProcessed}/${messageProgress.totalDocuments} indexed`,
       );
@@ -243,8 +285,8 @@ async function performSync(flowManager, flowId, flowType) {
       const unindexedMessages = messageCount - messagesIndexed;
       const noneIndexed = messagesIndexed === 0 && unindexedMessages > 0;
 
-      if (settingsUpdated || noneIndexed || unindexedMessages > syncThreshold) {
-        if (noneIndexed && !settingsUpdated) {
+      if (forceResync || noneIndexed || unindexedMessages > syncThreshold) {
+        if (noneIndexed && !forceResync) {
           logger.info('[indexSync] No messages marked as indexed, forcing full sync');
         }
         logger.info(`[indexSync] Starting message sync (${unindexedMessages} unindexed)`);
@@ -263,7 +305,7 @@ async function performSync(flowManager, flowId, flowType) {
 
     // Check if we need to sync conversations
     const convoProgress = await Conversation.getSyncProgress();
-    if (!convoProgress.isComplete || settingsUpdated) {
+    if (!convoProgress.isComplete || forceResync) {
       logger.info(
         `[indexSync] Conversations need syncing: ${convoProgress.totalProcessed}/${convoProgress.totalDocuments} indexed`,
       );
@@ -273,8 +315,8 @@ async function performSync(flowManager, flowId, flowType) {
       const unindexedConvos = convoCount - convosIndexed;
       const noneConvosIndexed = convosIndexed === 0 && unindexedConvos > 0;
 
-      if (settingsUpdated || noneConvosIndexed || unindexedConvos > syncThreshold) {
-        if (noneConvosIndexed && !settingsUpdated) {
+      if (forceResync || noneConvosIndexed || unindexedConvos > syncThreshold) {
+        if (noneConvosIndexed && !forceResync) {
           logger.info('[indexSync] No conversations marked as indexed, forcing full sync');
         }
         logger.info(`[indexSync] Starting convos sync (${unindexedConvos} unindexed)`);
