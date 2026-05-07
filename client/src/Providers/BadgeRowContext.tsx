@@ -18,6 +18,7 @@ interface BadgeRowContextType {
   agentsConfig?: TAgentsEndpoint | null;
   skills: ReturnType<typeof useToolToggle>;
   webSearch: ReturnType<typeof useToolToggle>;
+  imageGen: ReturnType<typeof useToolToggle>;
   artifacts: ReturnType<typeof useToolToggle>;
   fileSearch: ReturnType<typeof useToolToggle>;
   codeInterpreter: ReturnType<typeof useToolToggle>;
@@ -98,12 +99,14 @@ export default function BadgeRowProvider({
       const codeToggleKey = `${LocalStorageKeys.LAST_CODE_TOGGLE_}${storageSuffix}`;
       const webSearchToggleKey = `${LocalStorageKeys.LAST_WEB_SEARCH_TOGGLE_}${storageSuffix}`;
       const fileSearchToggleKey = `${LocalStorageKeys.LAST_FILE_SEARCH_TOGGLE_}${storageSuffix}`;
+      const imageGenToggleKey = `${LocalStorageKeys.LAST_IMAGE_GEN_TOGGLE_}${storageSuffix}`;
       const artifactsToggleKey = `${LocalStorageKeys.LAST_ARTIFACTS_TOGGLE_}${storageSuffix}`;
       const skillsToggleKey = `${LocalStorageKeys.LAST_SKILLS_TOGGLE_}${storageSuffix}`;
 
       const codeToggleValue = getTimestampedValue(codeToggleKey);
       const webSearchToggleValue = getTimestampedValue(webSearchToggleKey);
       const fileSearchToggleValue = getTimestampedValue(fileSearchToggleKey);
+      const imageGenToggleValue = getTimestampedValue(imageGenToggleKey);
       const artifactsToggleValue = getTimestampedValue(artifactsToggleKey);
       const skillsToggleValue = getTimestampedValue(skillsToggleKey);
 
@@ -130,6 +133,14 @@ export default function BadgeRowProvider({
           initialValues[Tools.file_search] = JSON.parse(fileSearchToggleValue);
         } catch (e) {
           console.error('Failed to parse file search toggle value:', e);
+        }
+      }
+
+      if (imageGenToggleValue !== null) {
+        try {
+          initialValues[AgentCapabilities.image_gen] = JSON.parse(imageGenToggleValue);
+        } catch (e) {
+          console.error('Failed to parse image gen toggle value:', e);
         }
       }
 
@@ -232,6 +243,15 @@ export default function BadgeRowProvider({
     isAuthenticated: true,
   });
 
+  /** ImageGen hook — toggle maps to gemini_image_gen tool server-side */
+  const imageGen = useToolToggle({
+    conversationId,
+    storageContextKey,
+    toolKey: AgentCapabilities.image_gen,
+    localStorageKey: LocalStorageKeys.LAST_IMAGE_GEN_TOGGLE_,
+    isAuthenticated: true,
+  });
+
   /** Artifacts hook - using a custom key since it's not a Tool but a capability */
   const artifacts = useToolToggle({
     conversationId,
@@ -255,6 +275,7 @@ export default function BadgeRowProvider({
   const value: BadgeRowContextType = {
     skills,
     webSearch,
+    imageGen,
     artifacts,
     fileSearch,
     agentsConfig,
