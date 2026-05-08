@@ -19,8 +19,10 @@ import { useChatBadges } from '~/hooks';
 import ToolDialogs from './ToolDialogs';
 import FileSearch from './FileSearch';
 import Artifacts from './Artifacts';
+import ImageGen from './ImageGen';
 import MCPSelect from './MCPSelect';
 import WebSearch from './WebSearch';
+import Skills from './Skills';
 import ImageGeneration from './ImageGeneration';
 import store from '~/store';
 
@@ -375,6 +377,7 @@ function BadgeRow({
             <CodeInterpreter />
             <FileSearch />
             <ImageGeneration />
+            <Skills />
             <Artifacts />
             <MCPSelect />
           </>

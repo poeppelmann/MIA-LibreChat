@@ -412,34 +412,36 @@ export function replaceSpecialVars({
   user,
   conversationId,
   timezone,
+  now: inputNow,
 }: {
   text: string;
   user?: t.TUser | null;
   conversationId?: string | null;
   timezone?: string;
+  now?: string | number | Date;
 }) {
   let result = text;
   if (!result) {
     return result;
   }
 
-  let now = timezone ? dayjs().tz(timezone) : dayjs();
+  let now = inputNow != null ? dayjs(inputNow) : timezone ? dayjs().tz(timezone) : dayjs();
   if (!now.isValid()) {
     now = dayjs();
   }
   const weekdayName = now.format('dddd');
 
   const currentDate = now.format('YYYY-MM-DD');
-  result = result.replace(/{{current_date}}/gi, `${currentDate} (${weekdayName})`);
+  result = result.replace(/{{\s*current_date\s*}}/gi, `${currentDate} (${weekdayName})`);
 
   const currentDatetime = now.format('YYYY-MM-DD HH:mm:ss Z');
-  result = result.replace(/{{current_datetime}}/gi, `${currentDatetime} (${weekdayName})`);
+  result = result.replace(/{{\s*current_datetime\s*}}/gi, `${currentDatetime} (${weekdayName})`);
 
   const isoDatetime = now.toISOString();
-  result = result.replace(/{{iso_datetime}}/gi, isoDatetime);
+  result = result.replace(/{{\s*iso_datetime\s*}}/gi, isoDatetime);
 
   if (user && user.name) {
-    result = result.replace(/{{current_user}}/gi, user.name);
+    result = result.replace(/{{\s*current_user\s*}}/gi, user.name);
   }
 
   if (typeof conversationId === 'string' && conversationId) {
