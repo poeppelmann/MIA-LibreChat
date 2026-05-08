@@ -18,7 +18,6 @@ interface BadgeRowContextType {
   agentsConfig?: TAgentsEndpoint | null;
   skills: ReturnType<typeof useToolToggle>;
   webSearch: ReturnType<typeof useToolToggle>;
-  imageGen: ReturnType<typeof useToolToggle>;
   artifacts: ReturnType<typeof useToolToggle>;
   fileSearch: ReturnType<typeof useToolToggle>;
   imageGeneration: ReturnType<typeof useToolToggle>;
@@ -139,7 +138,7 @@ export default function BadgeRowProvider({
 
       if (imageGenToggleValue !== null) {
         try {
-          initialValues[AgentCapabilities.image_gen] = JSON.parse(imageGenToggleValue);
+          initialValues[AgentCapabilities.image_generation] = JSON.parse(imageGenToggleValue);
         } catch (e) {
           console.error('Failed to parse image gen toggle value:', e);
         }
@@ -244,15 +243,6 @@ export default function BadgeRowProvider({
     isAuthenticated: true,
   });
 
-  /** ImageGen hook — toggle maps to gemini_image_gen tool server-side */
-  const imageGen = useToolToggle({
-    conversationId,
-    storageContextKey,
-    toolKey: AgentCapabilities.image_gen,
-    localStorageKey: LocalStorageKeys.LAST_IMAGE_GEN_TOGGLE_,
-    isAuthenticated: true,
-  });
-
   /** Artifacts hook - using a custom key since it's not a Tool but a capability */
   const artifacts = useToolToggle({
     conversationId,
@@ -270,11 +260,13 @@ export default function BadgeRowProvider({
     localStorageKey: LocalStorageKeys.LAST_SKILLS_TOGGLE_,
   });
 
-  /** Image Generation hook - using capability key */
+  /** Image Generation hook — toggle maps to gemini_image_gen tool server-side */
   const imageGeneration = useToolToggle({
     conversationId,
+    storageContextKey,
     toolKey: AgentCapabilities.image_generation,
     localStorageKey: LocalStorageKeys.LAST_IMAGE_GEN_TOGGLE_,
+    isAuthenticated: true,
   });
 
   const mcpServerManager = useMCPServerManager({ conversationId, storageContextKey });
@@ -282,7 +274,6 @@ export default function BadgeRowProvider({
   const value: BadgeRowContextType = {
     skills,
     webSearch,
-    imageGen,
     artifacts,
     fileSearch,
     imageGeneration,

@@ -36,7 +36,7 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
   const {
     codeEnabled,
     webSearchEnabled,
-    imageGenEnabled,
+    imageGenerationEnabled,
     artifactsEnabled,
     fileSearchEnabled,
     skillsEnabled,
@@ -72,7 +72,7 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
   const {
     skills,
     webSearch,
-    imageGen,
+    imageGeneration,
     artifacts,
     fileSearch,
     mcpServerManager,
@@ -88,7 +88,7 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     authData: webSearchAuthData,
   } = webSearch ?? {};
   const { isPinned: isCodePinned, setIsPinned: setIsCodePinned } = codeInterpreter ?? {};
-  const { isPinned: isImageGenPinned, setIsPinned: setIsImageGenPinned } = imageGen ?? {};
+  const { isPinned: isImageGenPinned, setIsPinned: setIsImageGenPinned } = imageGeneration ?? {};
   const { isPinned: isFileSearchPinned, setIsPinned: setIsFileSearchPinned } = fileSearch ?? {};
   const { isPinned: isArtifactsPinned, setIsPinned: setIsArtifactsPinned } = artifacts ?? {};
   const { isPinned: isSkillsPinned, setIsPinned: setIsSkillsPinned } = skills ?? {};
@@ -115,9 +115,9 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
   }, [fileSearch]);
 
   const handleImageGenToggle = useCallback(() => {
-    const newValue = !imageGen?.toggleState;
-    imageGen?.debouncedChange({ value: newValue });
-  }, [imageGen]);
+    const newValue = !imageGeneration?.toggleState;
+    imageGeneration?.debouncedChange({ value: newValue });
+  }, [imageGeneration]);
 
   const handleArtifactsToggle = useCallback(() => {
     const currentState = artifacts?.toggleState;
@@ -241,7 +241,7 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     });
   }
 
-  if (imageGenEnabled) {
+  if (imageGenerationEnabled) {
     dropdownItems.push({
       onClick: handleImageGenToggle,
       hideOnClick: false,
