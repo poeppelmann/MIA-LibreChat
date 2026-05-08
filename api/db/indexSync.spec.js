@@ -527,4 +527,100 @@ describe('performSync() - syncThreshold logic', () => {
       '[indexSync] 6 convos unindexed (below threshold: 1000, skipping)',
     );
   });
+
+  test('deletes orphaned docs by their primary key (not by hit.id) and forces re-sync', async () => {
+    Message.getSyncProgress.mockResolvedValue({
+      totalProcessed: 100,
+      totalDocuments: 100,
+      isComplete: true,
+    });
+    Conversation.getSyncProgress.mockResolvedValue({
+      totalProcessed: 50,
+      totalDocuments: 50,
+      isComplete: true,
+    });
+    Message.syncWithMeili.mockResolvedValue(undefined);
+    Conversation.syncWithMeili.mockResolvedValue(undefined);
+
+    const messagesDeleteDocuments = jest.fn().mockResolvedValue({});
+    const convosDeleteDocuments = jest.fn().mockResolvedValue({});
+
+    // search() is called once during orphan detection and again during cleanup
+    // (which iterates with offset until a partial/empty page). Returning the
+    // same page for both calls is fine because hits.length < batchSize ends the loop.
+    const messagesHits = [
+      { messageId: 'm-1', text: 'Barcelona' }, // orphan: no user field
+      { messageId: 'm-2', user: 'user-A', text: 'Madrid' },
+      { messageId: 'm-3', text: 'Barcelona again' }, // orphan
+    ];
+    const messagesSearch = jest.fn().mockResolvedValue({ hits: messagesHits });
+
+    const convosHits = [{ conversationId: 'c-1', title: 'Trip to Barcelona' }];
+    const convosSearch = jest.fn().mockResolvedValue({ hits: convosHits });
+
+    mockMeiliIndex.mockImplementation((name) => {
+      if (name === 'messages') {
+        return {
+          getSettings: jest.fn().mockResolvedValue({ filterableAttributes: ['user'] }),
+          updateSettings: jest.fn().mockResolvedValue({}),
+          search: messagesSearch,
+          deleteDocuments: messagesDeleteDocuments,
+        };
+      }
+      return {
+        getSettings: jest.fn().mockResolvedValue({ filterableAttributes: ['user'] }),
+        updateSettings: jest.fn().mockResolvedValue({}),
+        search: convosSearch,
+        deleteDocuments: convosDeleteDocuments,
+      };
+    });
+
+    const indexSync = require('./indexSync');
+    await indexSync();
+
+    // The fix: deletion uses primaryKey (messageId/conversationId), not hit.id
+    expect(messagesDeleteDocuments).toHaveBeenCalledWith(['m-1', 'm-3']);
+    expect(convosDeleteDocuments).toHaveBeenCalledWith(['c-1']);
+
+    // After cleanup, _meiliIndex flags reset so docs get re-indexed with user field
+    expect(mockBatchResetMeiliFlags).toHaveBeenCalledWith(Message.collection);
+    expect(mockBatchResetMeiliFlags).toHaveBeenCalledWith(Conversation.collection);
+
+    // And a full re-sync runs even though progress reported isComplete: true
+    expect(Message.syncWithMeili).toHaveBeenCalledTimes(1);
+    expect(Conversation.syncWithMeili).toHaveBeenCalledTimes(1);
+    expect(mockLogger.info).toHaveBeenCalledWith(
+      '[indexSync] Orphaned documents removed. Forcing re-sync to restore them with the user field...',
+    );
+  });
+
+  test('does not reset flags when orphan detection finds nothing to delete', async () => {
+    Message.getSyncProgress.mockResolvedValue({
+      totalProcessed: 100,
+      totalDocuments: 100,
+      isComplete: true,
+    });
+    Conversation.getSyncProgress.mockResolvedValue({
+      totalProcessed: 50,
+      totalDocuments: 50,
+      isComplete: true,
+    });
+
+    // All docs have a user field — no orphans
+    mockMeiliIndex.mockReturnValue({
+      getSettings: jest.fn().mockResolvedValue({ filterableAttributes: ['user'] }),
+      updateSettings: jest.fn().mockResolvedValue({}),
+      search: jest.fn().mockResolvedValue({
+        hits: [{ messageId: 'm-1', user: 'user-A', text: 'Barcelona' }],
+      }),
+      deleteDocuments: jest.fn().mockResolvedValue({}),
+    });
+
+    const indexSync = require('./indexSync');
+    await indexSync();
+
+    expect(mockBatchResetMeiliFlags).not.toHaveBeenCalled();
+    expect(Message.syncWithMeili).not.toHaveBeenCalled();
+    expect(Conversation.syncWithMeili).not.toHaveBeenCalled();
+  });
 });

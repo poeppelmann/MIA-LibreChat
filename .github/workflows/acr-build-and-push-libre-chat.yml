@@ -1,0 +1,47 @@
+name: Build and Push MIA - LibreChat Container to ACR
+
+on:
+  push:
+    branches: ["release"]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    env:
+      IMAGE_NAME: mia-libre-chat
+      TAG: ${{ github.sha }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: ACR sanity
+        run: |
+          az account show -o table
+          az acr show -n "${{ vars.ACR_NAME }}" -o table
+
+      - name: Login to ACR
+        run: az acr login --name "${{ vars.ACR_NAME }}"
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.multi
+          push: true
+          tags: |
+            ${{ vars.ACR_REGISTRY_SERVER }}/${{ env.IMAGE_NAME }}:${{ env.TAG }}
+            ${{ vars.ACR_REGISTRY_SERVER }}/${{ env.IMAGE_NAME }}:latest

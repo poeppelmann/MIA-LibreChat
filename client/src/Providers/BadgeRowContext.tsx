@@ -21,6 +21,7 @@ interface BadgeRowContextType {
   imageGen: ReturnType<typeof useToolToggle>;
   artifacts: ReturnType<typeof useToolToggle>;
   fileSearch: ReturnType<typeof useToolToggle>;
+  imageGeneration: ReturnType<typeof useToolToggle>;
   codeInterpreter: ReturnType<typeof useToolToggle>;
   searchApiKeyForm: ReturnType<typeof useSearchApiKeyForm>;
   mcpServerManager: ReturnType<typeof useMCPServerManager>;
@@ -267,7 +268,13 @@ export default function BadgeRowProvider({
     storageContextKey,
     toolKey: AgentCapabilities.skills,
     localStorageKey: LocalStorageKeys.LAST_SKILLS_TOGGLE_,
-    isAuthenticated: true,
+  });
+
+  /** Image Generation hook - using capability key */
+  const imageGeneration = useToolToggle({
+    conversationId,
+    toolKey: AgentCapabilities.image_generation,
+    localStorageKey: LocalStorageKeys.LAST_IMAGE_GEN_TOGGLE_,
   });
 
   const mcpServerManager = useMCPServerManager({ conversationId, storageContextKey });
@@ -278,6 +285,7 @@ export default function BadgeRowProvider({
     imageGen,
     artifacts,
     fileSearch,
+    imageGeneration,
     agentsConfig,
     conversationId,
     storageContextKey,
