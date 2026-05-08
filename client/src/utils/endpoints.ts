@@ -226,6 +226,7 @@ export function applyModelSpecEphemeralAgent({
     web_search: modelSpec.webSearch ?? false,
     file_search: modelSpec.fileSearch ?? false,
     execute_code: modelSpec.executeCode ?? false,
+    image_generation: false,
     artifacts: modelSpec.artifacts === true ? 'default' : modelSpec.artifacts || '',
   };
 
@@ -237,6 +238,7 @@ export function applyModelSpecEphemeralAgent({
       ['execute_code', LocalStorageKeys.LAST_CODE_TOGGLE_],
       ['web_search', LocalStorageKeys.LAST_WEB_SEARCH_TOGGLE_],
       ['file_search', LocalStorageKeys.LAST_FILE_SEARCH_TOGGLE_],
+      ['image_generation', LocalStorageKeys.LAST_IMAGE_GEN_TOGGLE_],
       ['artifacts', LocalStorageKeys.LAST_ARTIFACTS_TOGGLE_],
     ];
 

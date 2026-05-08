@@ -19,7 +19,6 @@ import { useChatBadges } from '~/hooks';
 import ToolDialogs from './ToolDialogs';
 import FileSearch from './FileSearch';
 import Artifacts from './Artifacts';
-import ImageGen from './ImageGen';
 import MCPSelect from './MCPSelect';
 import WebSearch from './WebSearch';
 import Skills from './Skills';
