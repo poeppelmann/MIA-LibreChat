@@ -64,6 +64,7 @@ describe('applyModelSpecEphemeralAgent', () => {
         execute_code: true,
         web_search: false,
         file_search: true,
+        image_generation: false,
         artifacts: 'default',
       });
     });
@@ -142,6 +143,22 @@ describe('applyModelSpecEphemeralAgent', () => {
       expect(agent.execute_code).toBe(false); // user override
       expect(agent.file_search).toBe(true); // user override
       expect(agent.web_search).toBe(true); // not overridden, spec value
+      expect(agent.image_generation).toBe(false);
+    });
+
+    it('should merge image_generation from localStorage for existing conversations', () => {
+      writeToolToggle(LocalStorageKeys.LAST_IMAGE_GEN_TOGGLE_, convoId, true);
+
+      const modelSpec = createModelSpec({
+        executeCode: false,
+        webSearch: false,
+        fileSearch: false,
+      });
+
+      applyModelSpecEphemeralAgent({ convoId, modelSpec, updateEphemeralAgent });
+
+      const agent = updateEphemeralAgent.mock.calls[0][1] as TEphemeralAgent;
+      expect(agent.image_generation).toBe(true);
     });
 
     it('should preserve user-added MCP servers across navigation', () => {
@@ -191,6 +208,7 @@ describe('applyModelSpecEphemeralAgent', () => {
       expect(agent.file_search).toBe(false); // spec default
       expect(agent.artifacts).toBe(''); // user override
       expect(agent.mcp).toEqual(['server1']); // spec default (not in localStorage)
+      expect(agent.image_generation).toBe(false);
     });
   });
 
@@ -217,6 +235,7 @@ describe('applyModelSpecEphemeralAgent', () => {
         execute_code: true,
         web_search: false,
         file_search: true,
+        image_generation: false,
         artifacts: 'default',
       });
     });

@@ -6,14 +6,15 @@ import { useBadgeRowContext } from '~/Providers';
 
 function ImageGeneration() {
   const localize = useLocalize();
-  const { imageGeneration: imageGenerationData } = useBadgeRowContext();
-  const { toggleState: imageGeneration, debouncedChange, isPinned } = imageGenerationData;
+  const context = useBadgeRowContext();
+  const { toggleState: imageGenerationEnabled, debouncedChange, isPinned } =
+    context?.imageGeneration ?? {};
 
   return (
-    (isPinned || imageGeneration === true) && (
+    (imageGenerationEnabled || isPinned) && (
       <CheckboxButton
         className="max-w-fit"
-        checked={imageGeneration}
+        checked={imageGenerationEnabled}
         setValue={debouncedChange}
         label={localize('com_ui_image_gen')}
         isCheckedClassName="border-purple-600/40 bg-purple-500/10 hover:bg-purple-700/10"
