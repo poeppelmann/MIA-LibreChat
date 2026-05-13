@@ -6,6 +6,7 @@ import sharp from 'sharp';
 import { logger } from '@librechat/data-schemas';
 import {
   DEFAULT_IMAGE_TOOL_RESULT_MAX_BYTES,
+  deriveImageGenOaiDefaults,
   downscaleImageForToolResult,
   resolveImageToolResultMaxBytes,
 } from '../image';
@@ -83,29 +84,82 @@ describe('downscaleImageForToolResult', () => {
     expect(result.base64).toBe(original.toString('base64'));
   });
 
-  it('downscales an oversized image to fit the byte budget', async () => {
+  it('re-encodes at full resolution before resizing (preserves LLM tokens)', async () => {
     const original = await makePngBuffer(1024, 1024);
-    const maxBytes = 50_000;
-    expect(original.length).toBeGreaterThan(maxBytes);
+    const tightButFormatFixable = 300_000;
+    expect(original.length).toBeGreaterThan(tightButFormatFixable);
 
-    const result = await downscaleImageForToolResult(original, maxBytes);
+    const result = await downscaleImageForToolResult(original, tightButFormatFixable);
 
-    expect(result.resized).toBe(true);
-    expect(result.buffer.length).toBeLessThanOrEqual(maxBytes);
-    expect(result.base64).toBe(result.buffer.toString('base64'));
-    expect(['image/png', 'image/jpeg']).toContain(result.mimeType);
+    expect(result.buffer.length).toBeLessThanOrEqual(tightButFormatFixable);
+    expect(['image/webp', 'image/jpeg']).toContain(result.mimeType);
+    expect(result.resized).toBe(false);
 
     const metadata = await sharp(result.buffer).metadata();
-    expect(metadata.width).toBeLessThan(1024);
+    expect(metadata.width).toBe(1024);
+    expect(metadata.height).toBe(1024);
   });
 
-  it('falls back to JPEG when resizing alone cannot satisfy the budget', async () => {
+  it('falls back to resizing when format conversion alone is insufficient', async () => {
     const original = await makePngBuffer(2048, 2048);
-    const veryTightBudget = 2_000;
+    const veryTightBudget = 30_000;
 
     const result = await downscaleImageForToolResult(original, veryTightBudget);
 
+    expect(result.buffer.length).toBeLessThanOrEqual(veryTightBudget);
     expect(result.resized).toBe(true);
-    expect(result.mimeType).toBe('image/jpeg');
+
+    const metadata = await sharp(result.buffer).metadata();
+    expect(metadata.width).toBeLessThan(2048);
+  });
+});
+
+describe('deriveImageGenOaiDefaults', () => {
+  let originalEnv: string | undefined;
+
+  beforeEach(() => {
+    originalEnv = process.env.IMAGE_TOOL_RESULT_MAX_FILE_SIZE_BYTES;
+  });
+
+  afterEach(() => {
+    if (originalEnv !== undefined) {
+      process.env.IMAGE_TOOL_RESULT_MAX_FILE_SIZE_BYTES = originalEnv;
+    } else {
+      delete process.env.IMAGE_TOOL_RESULT_MAX_FILE_SIZE_BYTES;
+    }
+  });
+
+  it('returns generous defaults for a >= 5 MB budget', () => {
+    expect(deriveImageGenOaiDefaults(5_000_000)).toEqual({
+      outputFormat: 'webp',
+      outputCompression: 90,
+      defaultSize: 'auto',
+      defaultQuality: 'high',
+    });
+  });
+
+  it('returns balanced defaults around the 2.5 MiB sweet spot', () => {
+    const defaults = deriveImageGenOaiDefaults(2_621_440);
+    expect(defaults.outputFormat).toBe('webp');
+    expect(defaults.outputCompression).toBe(85);
+    expect(defaults.defaultQuality).toBe('auto');
+  });
+
+  it('drops to medium quality + fixed 1024x1024 for tight budgets', () => {
+    const defaults = deriveImageGenOaiDefaults(800_000);
+    expect(defaults.defaultSize).toBe('1024x1024');
+    expect(defaults.defaultQuality).toBe('medium');
+  });
+
+  it('drops to low quality for very tight budgets', () => {
+    const defaults = deriveImageGenOaiDefaults(200_000);
+    expect(defaults.outputCompression).toBe(60);
+    expect(defaults.defaultQuality).toBe('low');
+  });
+
+  it('falls back to env-resolved budget when called without args', () => {
+    process.env.IMAGE_TOOL_RESULT_MAX_FILE_SIZE_BYTES = '500000';
+    const defaults = deriveImageGenOaiDefaults();
+    expect(defaults.defaultQuality).toBe('low');
   });
 });
