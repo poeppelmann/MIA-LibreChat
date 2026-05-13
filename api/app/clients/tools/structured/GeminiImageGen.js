@@ -11,7 +11,6 @@ const {
   loadServiceKey,
   getBalanceConfig,
   getTransactionsConfig,
-  downscaleImageForToolResult,
 } = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { spendTokens, getFiles } = require('~/models');
@@ -420,10 +419,17 @@ function createGeminiImageTool(fields = {}) {
       }
 
       const rawBuffer = Buffer.from(rawImageData, 'base64');
-      const { buffer: convertedBuffer } = await convertImageFormat(rawBuffer, imageOutputType);
-      const downscaled = await downscaleImageForToolResult(convertedBuffer);
-
-      const dataUrl = `data:${downscaled.mimeType};base64,${downscaled.base64}`;
+      const { buffer: convertedBuffer, format } = await convertImageFormat(
+        rawBuffer,
+        imageOutputType,
+      );
+      const mimeType =
+        format === 'jpeg'
+          ? 'image/jpeg'
+          : format === 'webp'
+            ? 'image/webp'
+            : 'image/png';
+      const dataUrl = `data:${mimeType};base64,${convertedBuffer.toString('base64')}`;
       const file_ids = [v4()];
       const content = [
         {

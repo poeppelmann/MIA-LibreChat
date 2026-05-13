@@ -7,7 +7,7 @@ const { v4: uuidv4 } = require('uuid');
 const { logger } = require('@librechat/data-schemas');
 const { Tool } = require('@librechat/agents/langchain/tools');
 const { FileContext, ContentTypes } = require('librechat-data-provider');
-const { getBasePath, downscaleImageForToolResult } = require('@librechat/api');
+const { getBasePath } = require('@librechat/api');
 const paths = require('~/config/paths');
 
 const stableDiffusionJsonSchema = {
@@ -143,12 +143,12 @@ class StableDiffusionAPI extends Tool {
 
     try {
       if (this.isAgent) {
-        const downscaled = await downscaleImageForToolResult(Buffer.from(image, 'base64'));
+        const pngBase64 = image.includes(',') ? image.split(',')[1] : image;
         const content = [
           {
             type: ContentTypes.IMAGE_URL,
             image_url: {
-              url: `data:${downscaled.mimeType};base64,${downscaled.base64}`,
+              url: `data:image/png;base64,${pngBase64}`,
             },
           },
         ];

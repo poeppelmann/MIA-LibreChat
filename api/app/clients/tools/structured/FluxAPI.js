@@ -4,7 +4,6 @@ const { v4: uuidv4 } = require('uuid');
 const { logger } = require('@librechat/data-schemas');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { Tool } = require('@librechat/agents/langchain/tools');
-const { downscaleImageForToolResult } = require('@librechat/api');
 const { FileContext, ContentTypes } = require('librechat-data-provider');
 
 const fluxApiJsonSchema = {
@@ -310,12 +309,14 @@ class FluxAPI extends Tool {
         }
         const imageResponse = await fetch(imageUrl, fetchOptions);
         const arrayBuffer = await imageResponse.arrayBuffer();
-        const downscaled = await downscaleImageForToolResult(Buffer.from(arrayBuffer));
+        const buffer = Buffer.from(arrayBuffer);
+        const contentType = imageResponse.headers.get('content-type');
+        const mimeType = contentType?.split(';')[0]?.trim() || 'image/png';
         const content = [
           {
             type: ContentTypes.IMAGE_URL,
             image_url: {
-              url: `data:${downscaled.mimeType};base64,${downscaled.base64}`,
+              url: `data:${mimeType};base64,${buffer.toString('base64')}`,
             },
           },
         ];
@@ -540,12 +541,14 @@ class FluxAPI extends Tool {
         }
         const imageResponse = await fetch(imageUrl, fetchOptions);
         const arrayBuffer = await imageResponse.arrayBuffer();
-        const downscaled = await downscaleImageForToolResult(Buffer.from(arrayBuffer));
+        const buffer = Buffer.from(arrayBuffer);
+        const contentType = imageResponse.headers.get('content-type');
+        const mimeType = contentType?.split(';')[0]?.trim() || 'image/png';
         const content = [
           {
             type: ContentTypes.IMAGE_URL,
             image_url: {
-              url: `data:${downscaled.mimeType};base64,${downscaled.base64}`,
+              url: `data:${mimeType};base64,${buffer.toString('base64')}`,
             },
           },
         ];

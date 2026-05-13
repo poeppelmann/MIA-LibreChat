@@ -11,7 +11,6 @@ const {
   logAxiosError,
   oaiToolkit,
   extractBaseURL,
-  downscaleImageForToolResult,
   resolveImageGenOaiDefaults,
 } = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
@@ -205,12 +204,17 @@ Error Message: ${error.message}`);
         );
       }
 
-      const downscaled = await downscaleImageForToolResult(Buffer.from(base64Image, 'base64'));
+      const mimeType =
+        output_format === EImageOutputType.PNG
+          ? 'image/png'
+          : output_format === EImageOutputType.WEBP
+            ? 'image/webp'
+            : 'image/jpeg';
       const content = [
         {
           type: ContentTypes.IMAGE_URL,
           image_url: {
-            url: `data:${downscaled.mimeType};base64,${downscaled.base64}`,
+            url: `data:${mimeType};base64,${base64Image}`,
           },
         },
       ];
@@ -388,12 +392,18 @@ Error Message: ${error.message}`);
           );
         }
 
-        const downscaled = await downscaleImageForToolResult(Buffer.from(base64Image, 'base64'));
+        const editFormat = budgetDefaults.outputFormat;
+        const mimeType =
+          editFormat === EImageOutputType.PNG
+            ? 'image/png'
+            : editFormat === EImageOutputType.WEBP
+              ? 'image/webp'
+              : 'image/jpeg';
         const content = [
           {
             type: ContentTypes.IMAGE_URL,
             image_url: {
-              url: `data:${downscaled.mimeType};base64,${downscaled.base64}`,
+              url: `data:${mimeType};base64,${base64Image}`,
             },
           },
         ];
