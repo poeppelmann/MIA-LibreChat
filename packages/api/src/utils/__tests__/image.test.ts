@@ -131,8 +131,8 @@ describe('deriveImageGenOaiDefaults', () => {
 
   it('returns generous defaults for a >= 5 MB budget', () => {
     expect(deriveImageGenOaiDefaults(5_000_000)).toEqual({
-      outputFormat: 'webp',
-      outputCompression: 90,
+      outputFormat: 'jpeg',
+      outputCompression: 95,
       defaultSize: 'auto',
       defaultQuality: 'high',
     });
@@ -140,19 +140,21 @@ describe('deriveImageGenOaiDefaults', () => {
 
   it('returns balanced defaults around the 2.5 MiB sweet spot', () => {
     const defaults = deriveImageGenOaiDefaults(2_621_440);
-    expect(defaults.outputFormat).toBe('webp');
+    expect(defaults.outputFormat).toBe('jpeg');
     expect(defaults.outputCompression).toBe(85);
     expect(defaults.defaultQuality).toBe('auto');
   });
 
   it('drops to medium quality + fixed 1024x1024 for tight budgets', () => {
     const defaults = deriveImageGenOaiDefaults(800_000);
+    expect(defaults.outputFormat).toBe('jpeg');
     expect(defaults.defaultSize).toBe('1024x1024');
     expect(defaults.defaultQuality).toBe('medium');
   });
 
   it('drops to low quality for very tight budgets', () => {
     const defaults = deriveImageGenOaiDefaults(200_000);
+    expect(defaults.outputFormat).toBe('jpeg');
     expect(defaults.outputCompression).toBe(60);
     expect(defaults.defaultQuality).toBe('low');
   });

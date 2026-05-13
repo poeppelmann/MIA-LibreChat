@@ -138,11 +138,9 @@ function createOpenAIImageTools(fields = {}) {
       /** @type {OpenAI} */
       const openai = new OpenAI(clientConfig);
       let output_format = budgetDefaults.outputFormat;
-      if (background === 'transparent' && output_format === EImageOutputType.JPEG) {
-        logger.warn(
-          '[ImageGenOAI] Transparent background requires PNG or WebP format; using WebP',
-        );
-        output_format = EImageOutputType.WEBP;
+      if (background === 'transparent' && output_format !== EImageOutputType.PNG) {
+        logger.warn('[ImageGenOAI] Transparent background requires PNG format; using PNG');
+        output_format = EImageOutputType.PNG;
       }
       const effectiveCompression =
         typeof output_compression === 'number' ? output_compression : budgetDefaults.outputCompression;

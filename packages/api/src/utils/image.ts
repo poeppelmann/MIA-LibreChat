@@ -170,6 +170,10 @@ export interface ImageGenOaiDefaults {
  * request, so OpenAI returns a smaller image directly instead of us shrinking
  * it after the fact.
  *
+ * JPEG is chosen as the default format because it is the only non-PNG format
+ * supported by both the direct OpenAI API and Azure OpenAI's gpt-image-1
+ * deployments. (Azure currently rejects `webp`.)
+ *
  * The thresholds are intentionally coarse — finer tuning would mostly add
  * complexity without a meaningful win.
  */
@@ -178,15 +182,15 @@ export function deriveImageGenOaiDefaults(
 ): ImageGenOaiDefaults {
   if (maxBytes >= 5_000_000) {
     return {
-      outputFormat: 'webp',
-      outputCompression: 90,
+      outputFormat: 'jpeg',
+      outputCompression: 95,
       defaultSize: 'auto',
       defaultQuality: 'high',
     };
   }
   if (maxBytes >= 2_000_000) {
     return {
-      outputFormat: 'webp',
+      outputFormat: 'jpeg',
       outputCompression: 85,
       defaultSize: 'auto',
       defaultQuality: 'auto',
@@ -194,14 +198,14 @@ export function deriveImageGenOaiDefaults(
   }
   if (maxBytes >= 800_000) {
     return {
-      outputFormat: 'webp',
+      outputFormat: 'jpeg',
       outputCompression: 75,
       defaultSize: '1024x1024',
       defaultQuality: 'medium',
     };
   }
   return {
-    outputFormat: 'webp',
+    outputFormat: 'jpeg',
     outputCompression: 60,
     defaultSize: '1024x1024',
     defaultQuality: 'low',
