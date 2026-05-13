@@ -4,7 +4,7 @@ const { v4: uuidv4 } = require('uuid');
 const { ProxyAgent, fetch } = require('undici');
 const { logger } = require('@librechat/data-schemas');
 const { Tool } = require('@librechat/agents/langchain/tools');
-const { getImageBasename, extractBaseURL } = require('@librechat/api');
+const { getImageBasename, extractBaseURL, downscaleImageForToolResult } = require('@librechat/api');
 const { FileContext, ContentTypes } = require('librechat-data-provider');
 
 const dalle3JsonSchema = {
@@ -186,12 +186,12 @@ Error Message: ${error.message}`);
       }
       const imageResponse = await fetch(theImageUrl, fetchOptions);
       const arrayBuffer = await imageResponse.arrayBuffer();
-      const base64 = Buffer.from(arrayBuffer).toString('base64');
+      const downscaled = await downscaleImageForToolResult(Buffer.from(arrayBuffer));
       const content = [
         {
           type: ContentTypes.IMAGE_URL,
           image_url: {
-            url: `data:image/png;base64,${base64}`,
+            url: `data:${downscaled.mimeType};base64,${downscaled.base64}`,
           },
         },
       ];

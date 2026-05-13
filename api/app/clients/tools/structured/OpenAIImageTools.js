@@ -7,7 +7,12 @@ const { logger } = require('@librechat/data-schemas');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { tool } = require('@librechat/agents/langchain/tools');
 const { ContentTypes, EImageOutputType } = require('librechat-data-provider');
-const { logAxiosError, oaiToolkit, extractBaseURL } = require('@librechat/api');
+const {
+  logAxiosError,
+  oaiToolkit,
+  extractBaseURL,
+  downscaleImageForToolResult,
+} = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getFiles } = require('~/models');
 
@@ -202,11 +207,12 @@ Error Message: ${error.message}`);
         );
       }
 
+      const downscaled = await downscaleImageForToolResult(Buffer.from(base64Image, 'base64'));
       const content = [
         {
           type: ContentTypes.IMAGE_URL,
           image_url: {
-            url: `data:image/${output_format};base64,${base64Image}`,
+            url: `data:${downscaled.mimeType};base64,${downscaled.base64}`,
           },
         },
       ];
@@ -374,11 +380,12 @@ Error Message: ${error.message}`);
           );
         }
 
+        const downscaled = await downscaleImageForToolResult(Buffer.from(base64Image, 'base64'));
         const content = [
           {
             type: ContentTypes.IMAGE_URL,
             image_url: {
-              url: `data:image/${imageOutputType};base64,${base64Image}`,
+              url: `data:${downscaled.mimeType};base64,${downscaled.base64}`,
             },
           },
         ];
