@@ -12,7 +12,7 @@ const {
   oaiToolkit,
   extractBaseURL,
   downscaleImageForToolResult,
-  deriveImageGenOaiDefaults,
+  resolveImageGenOaiDefaults,
 } = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getFiles } = require('~/models');
@@ -70,7 +70,7 @@ function createOpenAIImageTools(fields = {}) {
   }
   const { req } = fields;
   const appFileStrategy = fields.fileStrategy;
-  const budgetDefaults = deriveImageGenOaiDefaults();
+  const budgetDefaults = resolveImageGenOaiDefaults();
 
   const getApiKey = () => {
     const apiKey = process.env.IMAGE_GEN_OAI_API_KEY ?? '';

@@ -5,9 +5,13 @@ jest.mock('@librechat/data-schemas', () => ({
 import sharp from 'sharp';
 import { logger } from '@librechat/data-schemas';
 import {
+  DEFAULT_IMAGE_GEN_OAI_DEFAULT_QUALITY,
+  DEFAULT_IMAGE_GEN_OAI_DEFAULT_SIZE,
+  DEFAULT_IMAGE_GEN_OAI_OUTPUT_COMPRESSION,
+  DEFAULT_IMAGE_GEN_OAI_OUTPUT_FORMAT,
   DEFAULT_IMAGE_TOOL_RESULT_MAX_BYTES,
-  deriveImageGenOaiDefaults,
   downscaleImageForToolResult,
+  resolveImageGenOaiDefaults,
   resolveImageToolResultMaxBytes,
 } from '../image';
 
@@ -114,54 +118,103 @@ describe('downscaleImageForToolResult', () => {
   });
 });
 
-describe('deriveImageGenOaiDefaults', () => {
-  let originalEnv: string | undefined;
+describe('resolveImageGenOaiDefaults', () => {
+  type OaiEnvKey =
+    | 'IMAGE_GEN_OAI_OUTPUT_FORMAT'
+    | 'IMAGE_GEN_OAI_OUTPUT_COMPRESSION'
+    | 'IMAGE_GEN_OAI_DEFAULT_SIZE'
+    | 'IMAGE_GEN_OAI_DEFAULT_QUALITY';
+
+  const keys: OaiEnvKey[] = [
+    'IMAGE_GEN_OAI_OUTPUT_FORMAT',
+    'IMAGE_GEN_OAI_OUTPUT_COMPRESSION',
+    'IMAGE_GEN_OAI_DEFAULT_SIZE',
+    'IMAGE_GEN_OAI_DEFAULT_QUALITY',
+  ];
+
+  const snapshot: Partial<Record<OaiEnvKey, string | undefined>> = {};
 
   beforeEach(() => {
-    originalEnv = process.env.IMAGE_TOOL_RESULT_MAX_FILE_SIZE_BYTES;
+    for (const key of keys) {
+      snapshot[key] = process.env[key];
+      delete process.env[key];
+    }
+    jest.clearAllMocks();
   });
 
   afterEach(() => {
-    if (originalEnv !== undefined) {
-      process.env.IMAGE_TOOL_RESULT_MAX_FILE_SIZE_BYTES = originalEnv;
-    } else {
-      delete process.env.IMAGE_TOOL_RESULT_MAX_FILE_SIZE_BYTES;
+    for (const key of keys) {
+      const v = snapshot[key];
+      if (v !== undefined) {
+        process.env[key] = v;
+      } else {
+        delete process.env[key];
+      }
     }
   });
 
-  it('returns generous defaults for a >= 5 MB budget', () => {
-    expect(deriveImageGenOaiDefaults(5_000_000)).toEqual({
-      outputFormat: 'jpeg',
-      outputCompression: 95,
-      defaultSize: 'auto',
-      defaultQuality: 'high',
+  it('returns built-in defaults when env vars are unset', () => {
+    expect(resolveImageGenOaiDefaults()).toEqual({
+      outputFormat: DEFAULT_IMAGE_GEN_OAI_OUTPUT_FORMAT,
+      outputCompression: DEFAULT_IMAGE_GEN_OAI_OUTPUT_COMPRESSION,
+      defaultSize: DEFAULT_IMAGE_GEN_OAI_DEFAULT_SIZE,
+      defaultQuality: DEFAULT_IMAGE_GEN_OAI_DEFAULT_QUALITY,
     });
   });
 
-  it('returns balanced defaults around the 2.5 MiB sweet spot', () => {
-    const defaults = deriveImageGenOaiDefaults(2_621_440);
-    expect(defaults.outputFormat).toBe('jpeg');
-    expect(defaults.outputCompression).toBe(85);
-    expect(defaults.defaultQuality).toBe('auto');
+  it('respects valid custom env values', () => {
+    process.env.IMAGE_GEN_OAI_OUTPUT_FORMAT = 'png';
+    process.env.IMAGE_GEN_OAI_OUTPUT_COMPRESSION = '72';
+    process.env.IMAGE_GEN_OAI_DEFAULT_SIZE = '1024x1024';
+    process.env.IMAGE_GEN_OAI_DEFAULT_QUALITY = 'medium';
+
+    expect(resolveImageGenOaiDefaults()).toEqual({
+      outputFormat: 'png',
+      outputCompression: 72,
+      defaultSize: '1024x1024',
+      defaultQuality: 'medium',
+    });
   });
 
-  it('drops to medium quality + fixed 1024x1024 for tight budgets', () => {
-    const defaults = deriveImageGenOaiDefaults(800_000);
-    expect(defaults.outputFormat).toBe('jpeg');
-    expect(defaults.defaultSize).toBe('1024x1024');
-    expect(defaults.defaultQuality).toBe('medium');
+  it('falls back and warns for invalid format', () => {
+    process.env.IMAGE_GEN_OAI_OUTPUT_FORMAT = 'gif';
+    const defaults = resolveImageGenOaiDefaults();
+    expect(defaults.outputFormat).toBe(DEFAULT_IMAGE_GEN_OAI_OUTPUT_FORMAT);
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('Invalid IMAGE_GEN_OAI_OUTPUT_FORMAT'),
+    );
   });
 
-  it('drops to low quality for very tight budgets', () => {
-    const defaults = deriveImageGenOaiDefaults(200_000);
-    expect(defaults.outputFormat).toBe('jpeg');
-    expect(defaults.outputCompression).toBe(60);
-    expect(defaults.defaultQuality).toBe('low');
+  it('falls back and warns for invalid compression', () => {
+    process.env.IMAGE_GEN_OAI_OUTPUT_COMPRESSION = 'x';
+    const defaults = resolveImageGenOaiDefaults();
+    expect(defaults.outputCompression).toBe(DEFAULT_IMAGE_GEN_OAI_OUTPUT_COMPRESSION);
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('Invalid IMAGE_GEN_OAI_OUTPUT_COMPRESSION'),
+    );
   });
 
-  it('falls back to env-resolved budget when called without args', () => {
-    process.env.IMAGE_TOOL_RESULT_MAX_FILE_SIZE_BYTES = '500000';
-    const defaults = deriveImageGenOaiDefaults();
-    expect(defaults.defaultQuality).toBe('low');
+  it('clamps compression outside 0-100 and warns', () => {
+    process.env.IMAGE_GEN_OAI_OUTPUT_COMPRESSION = '150';
+    expect(resolveImageGenOaiDefaults().outputCompression).toBe(100);
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('IMAGE_GEN_OAI_OUTPUT_COMPRESSION'),
+    );
+  });
+
+  it('falls back for invalid default size', () => {
+    process.env.IMAGE_GEN_OAI_DEFAULT_SIZE = '4096x4096';
+    expect(resolveImageGenOaiDefaults().defaultSize).toBe(DEFAULT_IMAGE_GEN_OAI_DEFAULT_SIZE);
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('Invalid IMAGE_GEN_OAI_DEFAULT_SIZE'),
+    );
+  });
+
+  it('falls back for invalid default quality', () => {
+    process.env.IMAGE_GEN_OAI_DEFAULT_QUALITY = 'ultra';
+    expect(resolveImageGenOaiDefaults().defaultQuality).toBe(DEFAULT_IMAGE_GEN_OAI_DEFAULT_QUALITY);
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('Invalid IMAGE_GEN_OAI_DEFAULT_QUALITY'),
+    );
   });
 });
