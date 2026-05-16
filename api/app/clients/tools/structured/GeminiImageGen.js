@@ -419,14 +419,17 @@ function createGeminiImageTool(fields = {}) {
       }
 
       const rawBuffer = Buffer.from(rawImageData, 'base64');
-      const { buffer: convertedBuffer, format: outputFormat } = await convertImageFormat(
+      const { buffer: convertedBuffer, format } = await convertImageFormat(
         rawBuffer,
         imageOutputType,
       );
-      const imageData = convertedBuffer.toString('base64');
-      const mimeType = outputFormat === 'jpeg' ? 'image/jpeg' : `image/${outputFormat}`;
-
-      const dataUrl = `data:${mimeType};base64,${imageData}`;
+      const mimeType =
+        format === 'jpeg'
+          ? 'image/jpeg'
+          : format === 'webp'
+            ? 'image/webp'
+            : 'image/png';
+      const dataUrl = `data:${mimeType};base64,${convertedBuffer.toString('base64')}`;
       const file_ids = [v4()];
       const content = [
         {

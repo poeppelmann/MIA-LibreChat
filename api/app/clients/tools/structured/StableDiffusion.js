@@ -143,11 +143,12 @@ class StableDiffusionAPI extends Tool {
 
     try {
       if (this.isAgent) {
+        const pngBase64 = image.includes(',') ? image.split(',')[1] : image;
         const content = [
           {
             type: ContentTypes.IMAGE_URL,
             image_url: {
-              url: `data:image/png;base64,${image}`,
+              url: `data:image/png;base64,${pngBase64}`,
             },
           },
         ];

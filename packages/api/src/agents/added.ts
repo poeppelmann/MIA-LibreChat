@@ -162,7 +162,7 @@ export async function loadAddedAgent(
     tools.push(Tools.web_search);
   }
   if (ephemeralAgent?.image_generation === true) {
-    tools.push('gemini_image_gen');
+    tools.push('image_gen_oai');
   }
 
   const addedServers = new Set<string>();
