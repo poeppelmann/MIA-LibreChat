@@ -186,12 +186,14 @@ Error Message: ${error.message}`);
       }
       const imageResponse = await fetch(theImageUrl, fetchOptions);
       const arrayBuffer = await imageResponse.arrayBuffer();
-      const base64 = Buffer.from(arrayBuffer).toString('base64');
+      const buffer = Buffer.from(arrayBuffer);
+      const contentType = imageResponse.headers.get('content-type');
+      const mimeType = contentType?.split(';')[0]?.trim() || 'image/png';
       const content = [
         {
           type: ContentTypes.IMAGE_URL,
           image_url: {
-            url: `data:image/png;base64,${base64}`,
+            url: `data:${mimeType};base64,${buffer.toString('base64')}`,
           },
         },
       ];
