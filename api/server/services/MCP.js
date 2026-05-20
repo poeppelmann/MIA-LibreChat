@@ -1,4 +1,4 @@
-const { tool } = require('@langchain/core/tools');
+const { tool } = require('@librechat/agents/langchain/tools');
 const { logger, getTenantId } = require('@librechat/data-schemas');
 const {
   Providers,
@@ -415,9 +415,18 @@ async function createMCPTools({
   const serverConfig =
     config ?? (await getMCPServersRegistry().getServerConfig(serverName, user?.id, configServers));
   if (serverConfig?.url) {
-    const appConfig = await getAppConfig({ role: user?.role, tenantId: user?.tenantId });
+    const appConfig = await getAppConfig({
+      role: user?.role,
+      tenantId: user?.tenantId,
+      userId: user?.id,
+    });
     const allowedDomains = appConfig?.mcpSettings?.allowedDomains;
-    const isDomainAllowed = await isMCPDomainAllowed(serverConfig, allowedDomains);
+    const allowedAddresses = appConfig?.mcpSettings?.allowedAddresses;
+    const isDomainAllowed = await isMCPDomainAllowed(
+      serverConfig,
+      allowedDomains,
+      allowedAddresses,
+    );
     if (!isDomainAllowed) {
       logger.warn(`[MCP][${serverName}] Domain not allowed, skipping all tools`);
       return [];
@@ -498,9 +507,18 @@ async function createMCPTool({
   const serverConfig =
     config ?? (await getMCPServersRegistry().getServerConfig(serverName, user?.id, configServers));
   if (serverConfig?.url) {
-    const appConfig = await getAppConfig({ role: user?.role, tenantId: user?.tenantId });
+    const appConfig = await getAppConfig({
+      role: user?.role,
+      tenantId: user?.tenantId,
+      userId: user?.id,
+    });
     const allowedDomains = appConfig?.mcpSettings?.allowedDomains;
-    const isDomainAllowed = await isMCPDomainAllowed(serverConfig, allowedDomains);
+    const allowedAddresses = appConfig?.mcpSettings?.allowedAddresses;
+    const isDomainAllowed = await isMCPDomainAllowed(
+      serverConfig,
+      allowedDomains,
+      allowedAddresses,
+    );
     if (!isDomainAllowed) {
       logger.warn(`[MCP][${serverName}] Domain no longer allowed, skipping tool: ${toolName}`);
       return undefined;
