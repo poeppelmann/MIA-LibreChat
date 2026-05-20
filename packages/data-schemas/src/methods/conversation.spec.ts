@@ -136,7 +136,7 @@ describe('Conversation Operations', () => {
 
       // Verify that getMessages was called with correct parameters
       expect(getMessages).toHaveBeenCalledWith(
-        { conversationId: mockConversationData.conversationId },
+        { conversationId: mockConversationData.conversationId, user: mockCtx.userId },
         '_id',
       );
     });
@@ -680,7 +680,7 @@ describe('Conversation Operations', () => {
         createdAt,
         updatedAt,
       });
-      return Conversation.findOne({ conversationId }).lean();
+      return Conversation.findOne({ conversationId }).lean<IConversation>();
     };
 
     it('should not skip conversations at page boundaries', async () => {

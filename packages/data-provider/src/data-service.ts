@@ -83,8 +83,11 @@ export function createSharedLink(
   return request.post(endpoints.createSharedLink(conversationId), { targetMessageId });
 }
 
-export function updateSharedLink(shareId: string): Promise<t.TSharedLinkResponse> {
-  return request.patch(endpoints.updateSharedLink(shareId));
+export function updateSharedLink(
+  shareId: string,
+  targetMessageId?: string,
+): Promise<t.TSharedLinkResponse> {
+  return request.patch(endpoints.updateSharedLink(shareId), { targetMessageId });
 }
 
 export function deleteSharedLink(shareId: string): Promise<m.TDeleteSharedLinkResponse> {
@@ -695,6 +698,13 @@ export const getFileDownload = async (userId: string, file_id: string): Promise<
       Accept: 'application/octet-stream',
     },
   });
+};
+
+export const getFileDownloadURL = async (
+  userId: string,
+  file_id: string,
+): Promise<f.FileDownloadURLResponse> => {
+  return request.get(`${endpoints.files()}/download-url/${userId}/${file_id}`);
 };
 
 export const getCodeOutputDownload = async (url: string): Promise<AxiosResponse> => {

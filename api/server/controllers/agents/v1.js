@@ -55,6 +55,43 @@ const systemTools = {
 
 const MAX_SEARCH_LEN = 100;
 const escapeRegex = (str = '') => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const getSafeModelParameters = (modelParameters) => {
+  const { useResponsesApi } = modelParameters ?? {};
+  return typeof useResponsesApi === 'boolean' ? { useResponsesApi } : {};
+};
+const hasEditBit = (permission) => (permission & PermissionBits.EDIT) === PermissionBits.EDIT;
+
+const sanitizeViewerSkillScope = (agent, accessibleSkillSet) => {
+  const skillScopeEnabled = agent.skills_enabled === true;
+  delete agent.skills_enabled;
+
+  if (!skillScopeEnabled) {
+    delete agent.skills;
+    return agent;
+  }
+
+  const configuredSkills = Array.isArray(agent.skills) ? agent.skills : [];
+  if (configuredSkills.length === 0) {
+    delete agent.skills;
+    if (accessibleSkillSet.size > 0) {
+      agent.skills_enabled = true;
+    }
+    return agent;
+  }
+
+  const visibleSkills = configuredSkills
+    .map((skillId) => String(skillId))
+    .filter((skillId) => accessibleSkillSet.has(skillId));
+
+  if (visibleSkills.length === 0) {
+    delete agent.skills;
+    return agent;
+  }
+
+  agent.skills = visibleSkills;
+  agent.skills_enabled = true;
+  return agent;
+};
 
 /**
  * Looks up each referenced agent id in Mongo, splits them into three
@@ -221,6 +258,49 @@ const filterAuthorizedTools = async ({
 };
 
 /**
+ * Removes file IDs from tool resources unless the referenced file is owned by
+ * the agent owner.
+ * @param {object} params
+ * @param {object} params.tool_resources
+ * @param {string | object} params.ownerId
+ * @param {string} params.logPrefix
+ * @returns {Promise<number>} Count of removed file references.
+ */
+const pruneToolResourceFileIdsForOwner = async ({ tool_resources, ownerId, logPrefix }) => {
+  const referencedFileIds = collectToolResourceFileIds(tool_resources);
+  if (referencedFileIds.length === 0) {
+    return 0;
+  }
+  if (!ownerId) {
+    return stripFileIdsFromToolResources(tool_resources, referencedFileIds).removedCount;
+  }
+  const ownerIdStr = ownerId.toString();
+
+  try {
+    const ownerFiles = await db.getFiles({ file_id: { $in: referencedFileIds } }, null, {
+      file_id: 1,
+      user: 1,
+    });
+    const allowedIds = new Set(
+      (ownerFiles ?? [])
+        .filter((file) => file.user && file.user.toString() === ownerIdStr)
+        .map((file) => file.file_id),
+    );
+    const disallowedIds = referencedFileIds.filter((id) => !allowedIds.has(id));
+    if (disallowedIds.length > 0) {
+      logger.warn(`${logPrefix} Pruning ${disallowedIds.length} invalid file reference(s)`);
+      return stripFileIdsFromToolResources(tool_resources, disallowedIds).removedCount;
+    }
+    return 0;
+  } catch (fileCheckError) {
+    logger.warn(`${logPrefix} File ownership check failed, pruning incoming file references`, {
+      error: fileCheckError?.message,
+    });
+    return stripFileIdsFromToolResources(tool_resources, referencedFileIds).removedCount;
+  }
+};
+
+/**
  * Creates an Agent.
  * @route POST /Agents
  * @param {ServerRequest} req - The request object.
@@ -238,6 +318,14 @@ const createAgentHandler = async (req, res) => {
     }
 
     const { id: userId, role: userRole } = req.user;
+
+    if (agentData.tool_resources) {
+      await pruneToolResourceFileIdsForOwner({
+        tool_resources: agentData.tool_resources,
+        ownerId: userId,
+        logPrefix: '[/Agents]',
+      });
+    }
 
     if (agentData.edges?.length) {
       const unauthorized = await validateEdgeAgentAccess(agentData.edges, userId, userRole);
@@ -407,6 +495,7 @@ const getAgentHandler = async (req, res, expandProperties = false) => {
         author: agent.author,
         provider: agent.provider,
         model: agent.model,
+        model_parameters: getSafeModelParameters(agent.model_parameters),
         isPublic: agent.isPublic,
         version: agent.version,
         // Safe metadata
@@ -509,36 +598,12 @@ const updateAgentHandler = async (req, res) => {
       updateData.tools = ocrConversion.tools;
     }
 
-    /*
-     * Strip orphaned file_id stubs from the incoming payload (see issue #12776).
-     * Scoped to updates that actually touch tool_resources: if the save does not
-     * modify that field, the delete-time cleanup in processDeleteRequest and the
-     * one-off migration already cover pre-existing corruption, so there's no
-     * reason to pay an extra DB round-trip here. Wrapped in try/catch so a
-     * transient failure in this integrity check never turns a good save into 500.
-     */
     if (updateData.tool_resources) {
-      try {
-        const referencedFileIds = collectToolResourceFileIds(updateData.tool_resources);
-        if (referencedFileIds.length > 0) {
-          const existingFiles = await db.getFiles({ file_id: { $in: referencedFileIds } }, null, {
-            file_id: 1,
-          });
-          const existingIds = new Set((existingFiles ?? []).map((f) => f.file_id));
-          const orphans = referencedFileIds.filter((id) => !existingIds.has(id));
-          if (orphans.length > 0) {
-            logger.warn(
-              `[/Agents/:id] Pruning ${orphans.length} orphaned file reference(s) from agent ${id}`,
-            );
-            stripFileIdsFromToolResources(updateData.tool_resources, orphans);
-          }
-        }
-      } catch (orphanCheckError) {
-        logger.warn(
-          '[/Agents/:id] Orphan file check failed, skipping cleanup for this request',
-          orphanCheckError,
-        );
-      }
+      await pruneToolResourceFileIdsForOwner({
+        tool_resources: updateData.tool_resources,
+        ownerId: existingAgent.author,
+        logPrefix: `[/Agents/:id] Agent ${id}`,
+      });
     }
 
     if (updateData.tools) {
@@ -722,6 +787,14 @@ const duplicateAgentHandler = async (req, res) => {
       });
     }
 
+    if (newAgentData.tool_resources) {
+      await pruneToolResourceFileIdsForOwner({
+        tool_resources: newAgentData.tool_resources,
+        ownerId: userId,
+        logPrefix: '[/Agents/:id/duplicate]',
+      });
+    }
+
     const newAgent = await db.createAgent(newAgentData);
 
     try {
@@ -808,6 +881,7 @@ const getListAgentsHandler = async (req, res) => {
     } else if (typeof requiredPermission !== 'number') {
       requiredPermission = PermissionBits.VIEW;
     }
+    const canReturnSkillConfig = hasEditBit(requiredPermission);
     // Base filter
     const filter = {};
 
@@ -881,6 +955,7 @@ const getListAgentsHandler = async (req, res) => {
       otherParams: filter,
       limit,
       after: cursor,
+      includeSkillConfig: true,
     });
 
     const agents = data?.data ?? [];
@@ -888,10 +963,24 @@ const getListAgentsHandler = async (req, res) => {
       return res.json(data);
     }
 
+    let accessibleSkillSet = null;
+    if (!canReturnSkillConfig) {
+      const accessibleSkillIds = await findAccessibleResources({
+        userId,
+        role: req.user.role,
+        resourceType: ResourceType.SKILL,
+        requiredPermissions: PermissionBits.VIEW,
+      });
+      accessibleSkillSet = new Set(accessibleSkillIds.map((oid) => oid.toString()));
+    }
+
     const publicSet = new Set(publiclyAccessibleIds.map((oid) => oid.toString()));
 
     const urlCache = cachedRefresh?.urlCache;
     data.data = agents.map((agent) => {
+      if (accessibleSkillSet) {
+        sanitizeViewerSkillScope(agent, accessibleSkillSet);
+      }
       try {
         if (agent?._id && publicSet.has(agent._id.toString())) {
           agent.isPublic = true;
@@ -960,6 +1049,7 @@ const uploadAgentAvatarHandler = async (req, res) => {
       userId: req.user.id,
       manual: 'false',
       agentId: agent_id,
+      tenantId: req.user.tenantId,
     });
 
     const image = {
@@ -972,7 +1062,11 @@ const uploadAgentAvatarHandler = async (req, res) => {
     if (_avatar && _avatar.source) {
       const { deleteFile } = getStrategyFunctions(_avatar.source);
       try {
-        await deleteFile(req, { filepath: _avatar.filepath });
+        await deleteFile(req, {
+          filepath: _avatar.filepath,
+          user: req.user.id,
+          tenantId: req.user.tenantId,
+        });
         await db.deleteFileByFilter({ user: req.user.id, filepath: _avatar.filepath });
       } catch (error) {
         logger.error('[/:agent_id/avatar] Error deleting old avatar', error);
@@ -1051,6 +1145,7 @@ const revertAgentVersionHandler = async (req, res) => {
     // Permissions are enforced via route middleware (ACL EDIT)
 
     let updatedAgent = await db.revertAgentVersion({ id }, version_index);
+    const revertUpdates = {};
 
     if (updatedAgent.tools?.length) {
       const [availableTools, configServers] = await Promise.all([
@@ -1065,12 +1160,23 @@ const revertAgentVersionHandler = async (req, res) => {
         configServers,
       });
       if (filteredTools.length !== updatedAgent.tools.length) {
-        updatedAgent = await db.updateAgent(
-          { id },
-          { tools: filteredTools },
-          { updatingUserId: req.user.id },
-        );
+        revertUpdates.tools = filteredTools;
       }
+    }
+
+    if (updatedAgent.tool_resources) {
+      const removedCount = await pruneToolResourceFileIdsForOwner({
+        tool_resources: updatedAgent.tool_resources,
+        ownerId: existingAgent.author,
+        logPrefix: '[/Agents/:id/revert]',
+      });
+      if (removedCount > 0) {
+        revertUpdates.tool_resources = updatedAgent.tool_resources;
+      }
+    }
+
+    if (Object.keys(revertUpdates).length > 0) {
+      updatedAgent = await db.updateAgent({ id }, revertUpdates, { updatingUserId: req.user.id });
     }
 
     if (updatedAgent.author) {
