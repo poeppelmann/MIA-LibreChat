@@ -10,6 +10,7 @@ const {
   geminiToolkit,
   loadServiceKey,
   getBalanceConfig,
+  enforceImageSizeLimit,
   getTransactionsConfig,
 } = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
@@ -82,60 +83,6 @@ async function convertImageFormat(inputBuffer, targetFormat) {
   // Convert to target format
   const convertedBuffer = await sharp(inputBuffer).toFormat(normalizedTarget).toBuffer();
   return { buffer: convertedBuffer, format: normalizedTarget };
-}
-
-/**
- * Anthropic rejects tool-result images whose base64 payload exceeds 5 MiB.
- * Stay safely below that so the generated image is accepted by every provider.
- */
-const MAX_IMAGE_BASE64_BYTES = 4.8 * 1024 * 1024;
-
-/**
- * Approximate base64-encoded length of a buffer (4 output chars per 3 input bytes).
- * @param {number} byteLength - The raw buffer length in bytes
- * @returns {number} - The encoded base64 length
- */
-function base64Length(byteLength) {
-  return Math.ceil(byteLength / 3) * 4;
-}
-
-/**
- * Ensures the encoded image stays under the provider base64 size limit.
- * Re-compresses and, if still too large, progressively downscales the image.
- * @param {Buffer} inputBuffer - The converted image buffer
- * @param {string} format - The current image format (png, jpeg, webp)
- * @returns {Promise<{buffer: Buffer, format: string}>} - Size-capped buffer and format
- */
-async function enforceImageSizeLimit(inputBuffer, format) {
-  if (base64Length(inputBuffer.length) <= MAX_IMAGE_BASE64_BYTES) {
-    return { buffer: inputBuffer, format };
-  }
-
-  // PNG is lossless and oversized — switch to a compressed format.
-  const targetFormat = format === 'png' ? 'webp' : format;
-  const { width } = await sharp(inputBuffer).metadata();
-
-  let quality = 80;
-  let scale = 1;
-  let buffer = inputBuffer;
-  for (let attempt = 0; attempt < 8; attempt++) {
-    const pipeline = sharp(inputBuffer);
-    if (scale < 1 && width) {
-      pipeline.resize({ width: Math.round(width * scale), withoutEnlargement: true });
-    }
-    buffer = await pipeline.toFormat(targetFormat, { quality }).toBuffer();
-    if (base64Length(buffer.length) <= MAX_IMAGE_BASE64_BYTES) {
-      return { buffer, format: targetFormat };
-    }
-    if (quality > 50) {
-      quality -= 15;
-    } else {
-      scale *= 0.8;
-    }
-  }
-
-  logger.warn('[GeminiImageGen] Image still exceeds size limit after compression attempts');
-  return { buffer, format: targetFormat };
 }
 
 /**
@@ -477,16 +424,12 @@ function createGeminiImageTool(fields = {}) {
         rawBuffer,
         imageOutputType,
       );
-      const { buffer: finalBuffer, format: finalFormat } = await enforceImageSizeLimit(
+      const initialMimeType =
+        format === 'jpeg' ? 'image/jpeg' : format === 'webp' ? 'image/webp' : 'image/png';
+      const { buffer: finalBuffer, mimeType } = await enforceImageSizeLimit(
         convertedBuffer,
-        format,
+        initialMimeType,
       );
-      const mimeType =
-        finalFormat === 'jpeg'
-          ? 'image/jpeg'
-          : finalFormat === 'webp'
-            ? 'image/webp'
-            : 'image/png';
       const dataUrl = `data:${mimeType};base64,${finalBuffer.toString('base64')}`;
       const file_ids = [v4()];
       const content = [

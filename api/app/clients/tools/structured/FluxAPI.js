@@ -3,6 +3,7 @@ const fetch = require('node-fetch');
 const { v4: uuidv4 } = require('uuid');
 const { logger } = require('@librechat/data-schemas');
 const { HttpsProxyAgent } = require('https-proxy-agent');
+const { enforceImageSizeLimit } = require('@librechat/api');
 const { Tool } = require('@librechat/agents/langchain/tools');
 const { FileContext, ContentTypes } = require('librechat-data-provider');
 
@@ -313,11 +314,15 @@ class FluxAPI extends Tool {
         const buffer = Buffer.from(arrayBuffer);
         const contentType = imageResponse.headers.get('content-type');
         const mimeType = contentType?.split(';')[0]?.trim() || 'image/png';
+        const { buffer: finalBuffer, mimeType: finalMimeType } = await enforceImageSizeLimit(
+          buffer,
+          mimeType,
+        );
         const content = [
           {
             type: ContentTypes.IMAGE_URL,
             image_url: {
-              url: `data:${mimeType};base64,${buffer.toString('base64')}`,
+              url: `data:${finalMimeType};base64,${finalBuffer.toString('base64')}`,
             },
           },
         ];
@@ -546,11 +551,15 @@ class FluxAPI extends Tool {
         const buffer = Buffer.from(arrayBuffer);
         const contentType = imageResponse.headers.get('content-type');
         const mimeType = contentType?.split(';')[0]?.trim() || 'image/png';
+        const { buffer: finalBuffer, mimeType: finalMimeType } = await enforceImageSizeLimit(
+          buffer,
+          mimeType,
+        );
         const content = [
           {
             type: ContentTypes.IMAGE_URL,
             image_url: {
-              url: `data:${mimeType};base64,${buffer.toString('base64')}`,
+              url: `data:${finalMimeType};base64,${finalBuffer.toString('base64')}`,
             },
           },
         ];

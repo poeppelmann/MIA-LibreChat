@@ -7,7 +7,7 @@ const { v4: uuidv4 } = require('uuid');
 const { logger } = require('@librechat/data-schemas');
 const { Tool } = require('@librechat/agents/langchain/tools');
 const { FileContext, ContentTypes } = require('librechat-data-provider');
-const { getBasePath } = require('@librechat/api');
+const { getBasePath, enforceImageSizeLimit } = require('@librechat/api');
 const paths = require('~/config/paths');
 
 const stableDiffusionJsonSchema = {
@@ -144,11 +144,15 @@ class StableDiffusionAPI extends Tool {
     try {
       if (this.isAgent) {
         const pngBase64 = image.includes(',') ? image.split(',')[1] : image;
+        const { buffer: finalBuffer, mimeType: finalMimeType } = await enforceImageSizeLimit(
+          Buffer.from(pngBase64, 'base64'),
+          'image/png',
+        );
         const content = [
           {
             type: ContentTypes.IMAGE_URL,
             image_url: {
-              url: `data:image/png;base64,${pngBase64}`,
+              url: `data:${finalMimeType};base64,${finalBuffer.toString('base64')}`,
             },
           },
         ];
