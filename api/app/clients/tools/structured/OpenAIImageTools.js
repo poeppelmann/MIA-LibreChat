@@ -11,6 +11,7 @@ const {
   logAxiosError,
   oaiToolkit,
   extractBaseURL,
+  enforceImageSizeLimit,
   resolveImageGenOaiDefaults,
 } = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
@@ -210,11 +211,15 @@ Error Message: ${error.message}`);
           : output_format === EImageOutputType.WEBP
             ? 'image/webp'
             : 'image/jpeg';
+      const { buffer: finalBuffer, mimeType: finalMimeType } = await enforceImageSizeLimit(
+        Buffer.from(base64Image, 'base64'),
+        mimeType,
+      );
       const content = [
         {
           type: ContentTypes.IMAGE_URL,
           image_url: {
-            url: `data:${mimeType};base64,${base64Image}`,
+            url: `data:${finalMimeType};base64,${finalBuffer.toString('base64')}`,
           },
         },
       ];
@@ -399,11 +404,15 @@ Error Message: ${error.message}`);
             : editFormat === EImageOutputType.WEBP
               ? 'image/webp'
               : 'image/jpeg';
+        const { buffer: finalBuffer, mimeType: finalMimeType } = await enforceImageSizeLimit(
+          Buffer.from(base64Image, 'base64'),
+          mimeType,
+        );
         const content = [
           {
             type: ContentTypes.IMAGE_URL,
             image_url: {
-              url: `data:${mimeType};base64,${base64Image}`,
+              url: `data:${finalMimeType};base64,${finalBuffer.toString('base64')}`,
             },
           },
         ];

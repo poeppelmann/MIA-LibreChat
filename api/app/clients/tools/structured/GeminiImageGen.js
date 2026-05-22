@@ -10,6 +10,7 @@ const {
   geminiToolkit,
   loadServiceKey,
   getBalanceConfig,
+  enforceImageSizeLimit,
   getTransactionsConfig,
 } = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
@@ -318,7 +319,7 @@ function createGeminiImageTool(fields = {}) {
 
   const { req, imageFiles = [], userId, fileStrategy, GEMINI_API_KEY, GOOGLE_KEY } = fields;
 
-  const imageOutputType = fields.imageOutputType || EImageOutputType.PNG;
+  const imageOutputType = fields.imageOutputType || EImageOutputType.WEBP;
 
   const geminiImageGenTool = tool(
     async ({ prompt, image_ids, aspectRatio, imageSize }, runnableConfig) => {
@@ -423,13 +424,13 @@ function createGeminiImageTool(fields = {}) {
         rawBuffer,
         imageOutputType,
       );
-      const mimeType =
-        format === 'jpeg'
-          ? 'image/jpeg'
-          : format === 'webp'
-            ? 'image/webp'
-            : 'image/png';
-      const dataUrl = `data:${mimeType};base64,${convertedBuffer.toString('base64')}`;
+      const initialMimeType =
+        format === 'jpeg' ? 'image/jpeg' : format === 'webp' ? 'image/webp' : 'image/png';
+      const { buffer: finalBuffer, mimeType } = await enforceImageSizeLimit(
+        convertedBuffer,
+        initialMimeType,
+      );
+      const dataUrl = `data:${mimeType};base64,${finalBuffer.toString('base64')}`;
       const file_ids = [v4()];
       const content = [
         {

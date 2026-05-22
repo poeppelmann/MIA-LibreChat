@@ -73,7 +73,7 @@ export async function loadEphemeralAgent(
     tools.push(Tools.web_search);
   }
   if (ephemeralAgent?.image_generation === true) {
-    tools.push('image_gen_oai');
+    tools.push(Tools.gemini_image_gen);
   }
 
   const addedServers = new Set<string>();
