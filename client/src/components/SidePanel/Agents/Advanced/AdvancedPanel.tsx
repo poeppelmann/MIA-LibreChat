@@ -1,17 +1,20 @@
 import { useMemo } from 'react';
-import { ChevronLeft } from 'lucide-react';
-import { AgentCapabilities } from 'librechat-data-provider';
+import { useNavigate } from 'react-router-dom';
+import { ChevronLeft, Workflow } from 'lucide-react';
+import { AgentCapabilities, SystemRoles } from 'librechat-data-provider';
 import { useFormContext, Controller } from 'react-hook-form';
 import type { AgentForm } from '~/common';
 import { useAgentPanelContext } from '~/Providers';
+import { useAuthContext, useLocalize } from '~/hooks';
 import MaxAgentSteps from './MaxAgentSteps';
 import AgentHandoffs from './AgentHandoffs';
-import { useLocalize } from '~/hooks';
 import AgentChain from './AgentChain';
 import { Panel } from '~/common';
 
 export default function AdvancedPanel() {
   const localize = useLocalize();
+  const navigate = useNavigate();
+  const { user } = useAuthContext();
   const methods = useFormContext<AgentForm>();
   const { control, watch } = methods;
   const currentAgentId = watch('id');
@@ -21,6 +24,7 @@ export default function AdvancedPanel() {
     () => agentsConfig?.capabilities.includes(AgentCapabilities.chain) ?? false,
     [agentsConfig],
   );
+  const isAdmin = user?.role === SystemRoles.ADMIN;
 
   return (
     <div className="mb-1 flex w-full flex-col gap-2 text-sm">
@@ -56,6 +60,18 @@ export default function AdvancedPanel() {
             defaultValue={[]}
             render={({ field }) => <AgentChain field={field} currentAgentId={currentAgentId} />}
           />
+        )}
+        {isAdmin && (
+          <button
+            type="button"
+            onClick={() => navigate('/admin/orchestrator-designer')}
+            className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
+          >
+            <div className="flex w-full items-center justify-center gap-2">
+              <Workflow className="size-4" />
+              Visueller Orchestrator-Designer
+            </div>
+          </button>
         )}
       </div>
     </div>

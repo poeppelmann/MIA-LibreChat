@@ -1,0 +1,65 @@
+{
+  "schemaVersion": "1.0",
+  "exportedAt": "2026-05-22T00:00:00.000Z",
+  "orchestrator": {
+    "id": "orchestrator-aussendienst",
+    "isOrchestrator": true,
+    "name": "Außendienst-Orchestrator",
+    "model": "claude-haiku-4-5",
+    "systemPrompt": "Du bist der zentrale Koordinator für Außendienstmitarbeiter. Analysiere die Anfrage und delegiere an den passenden Sub-Agenten: Gesprächsvorbereitung, Nachbereitung, Datenerfassung, Belegverarbeitung oder FAQ.",
+    "description": "Zentrale Anlaufstelle für Außendienst-KI-Unterstützung. Klassifiziert eingehende Anfragen und delegiert an Sub-Agenten.",
+    "modelParameters": { "temperature": 0.4, "max_tokens": 2000 },
+    "capabilities": ["handover"]
+  },
+  "subAgents": [
+    {
+      "id": "sub-gespraechsvorbereitung",
+      "name": "Gesprächsvorbereitung",
+      "model": "claude-haiku-4-5",
+      "systemPrompt": "Bereite Außendienstler auf Kundenbesuche vor. Analysiere Kundendaten, erstelle Gesprächsleitfäden, identifiziere Upsell-Potenziale. Confluence-Tools nutzen für Kundeninfos.",
+      "description": "Erstellt Briefings und Gesprächsleitfäden für Kundenbesuche.",
+      "modelParameters": { "temperature": 0.7, "max_tokens": 2000 },
+      "tools": ["search", "searchConfluenceUsingCql", "getConfluencePage"]
+    },
+    {
+      "id": "sub-gespraechsnachbereitung",
+      "name": "Gesprächsnachbereitung",
+      "model": "claude-haiku-4-5",
+      "systemPrompt": "Strukturiere Gesprächsnotizen, erstelle Follow-up-Aufgaben, dokumentiere Kundenwünsche und Vereinbarungen. Lege Protokolle in Confluence ab.",
+      "description": "Protokollierung und Follow-up nach Kundenterminen.",
+      "modelParameters": { "temperature": 0.4, "max_tokens": 2000 },
+      "tools": ["createConfluencePage", "updateConfluencePage"]
+    },
+    {
+      "id": "sub-datenerfassung",
+      "name": "Datenerfassung",
+      "model": "claude-haiku-4-5",
+      "systemPrompt": "Extrahiere und strukturiere Daten aus Gesprächsnotizen. Validiere gegen bestehende CRM-Daten.",
+      "description": "Strukturierte Datenextraktion und CRM-Abgleich.",
+      "modelParameters": { "temperature": 0.2, "max_tokens": 3000 },
+      "tools": ["search", "getConfluencePage", "getPagesInConfluenceSpace"],
+      "externalConnections": { "ragServerUrl": "https://rag.intern/crm-data" }
+    },
+    {
+      "id": "sub-belegverarbeitung",
+      "name": "Belegverarbeitung",
+      "model": "claude-haiku-4-5",
+      "systemPrompt": "Verarbeite Belege, Quittungen und Reisekostendaten. Kategorisiere und validiere Ausgaben.",
+      "description": "Belege/Quittungen kategorisieren und ablegen.",
+      "modelParameters": { "temperature": 0.1, "max_tokens": 1500 },
+      "tools": ["createConfluencePage"]
+    },
+    {
+      "id": "sub-faq",
+      "name": "FAQ-Agent",
+      "model": "claude-haiku-4-5",
+      "systemPrompt": "Beantworte häufige Fragen aus dem Außendienst-Kontext schnell und präzise.",
+      "description": "Schnelle FAQ-Antworten aus dem FAQ-Space.",
+      "modelParameters": { "temperature": 0.5, "max_tokens": 800 },
+      "tools": ["searchConfluenceUsingCql", "getConfluencePage", "getPagesInConfluenceSpace"],
+      "externalConnections": {
+        "knowledgeBaseIds": ["ausendienst-faq", "produktkatalog"]
+      }
+    }
+  ]
+}

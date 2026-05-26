@@ -1,0 +1,144 @@
+{
+  "schemaVersion": "1.0",
+  "exportedAt": "2026-05-22T00:00:00.000Z",
+  "orchestrator": {
+    "id": "orchestrator-it-helpdesk",
+    "isOrchestrator": true,
+    "name": "IT-HelpDesk-Orchestrator",
+    "model": "claude-haiku-4-5",
+    "systemPrompt": "Du bist der IT-HelpDesk-Koordinator. Klassifiziere Anfragen und delegiere:\n(1) Einfache Fragen → Knowledge-Base-Agent\n(2) Issue-Recherche → Jira-Reader-Agent\n(3) Neue Tickets → passender Jira-Creator-Agent (Demand/Bug/ServiceRequest)\n(4) Automatisierbare Tasks → Automation-Agent\nPriorisiere nach Dringlichkeit. Bestätige vor destruktiven Aktionen.",
+    "description": "IT-HelpDesk-Koordinator: klassifiziert Anfragen, priorisiert nach Dringlichkeit, delegiert an spezialisierte Sub-Agenten.",
+    "modelParameters": { "temperature": 0.3, "max_tokens": 2000 },
+    "capabilities": ["handover"],
+    "tools": []
+  },
+  "subAgents": [
+    {
+      "id": "sub-knowledgebase",
+      "name": "Knowledge-Base-Agent",
+      "model": "claude-haiku-4-5",
+      "systemPrompt": "Du beantwortest IT-Support-Fragen aus der internen Wissensdatenbank.\nVorgehen:\n1. Suche zuerst mit search() kombiniert über Jira+Confluence\n2. Falls nicht gefunden: searchConfluenceUsingCql() gezielt in KB-Spaces\n3. Lese relevante Seiten mit getConfluencePage()\n4. Prüfe Unterseiten mit getConfluencePageDescendants()\nGib immer die Quelle (Seitenlink) an. Wenn keine Antwort gefunden: übergib an Jira-Reader.",
+      "description": "Beantwortet einfache IT-Fragen aus Confluence-KB + kombinierter Suche.",
+      "modelParameters": { "temperature": 0.3, "max_tokens": 1500, "top_p": 0.9 },
+      "tools": [
+        "search",
+        "searchConfluenceUsingCql",
+        "getConfluencePage",
+        "getConfluenceSpaces",
+        "getPagesInConfluenceSpace",
+        "getConfluencePageDescendants",
+        "getConfluencePageFooterComments"
+      ],
+      "externalConnections": {
+        "knowledgeBaseSpaces": ["IT-KB", "HOWTO", "ONBOARDING", "SECURITY"]
+      }
+    },
+    {
+      "id": "sub-jira-reader",
+      "name": "Jira-Reader-Agent",
+      "model": "claude-haiku-4-5",
+      "systemPrompt": "Du analysierst Jira-Tickets und findest relevante Informationen.\nVorgehen:\n1. searchJiraIssuesUsingJql() – suche ähnliche/offene Issues\n2. getJiraIssue() – hole Details zu spezifischen Tickets\n3. getTransitionsForJiraIssue() – prüfe mögliche nächste Schritte\n4. getJiraIssueRemoteIssueLinks() – prüfe externe Verknüpfungen\n5. search() – kombinierte Suche wenn unklar\nGib immer Ticket-Key + Status + Assignee zurück.",
+      "description": "Analysiert bestehende Tickets, findet ähnliche Issues, prüft Status & Historie.",
+      "modelParameters": { "temperature": 0.3, "max_tokens": 2000, "top_p": 0.9 },
+      "tools": [
+        "searchJiraIssuesUsingJql",
+        "getJiraIssue",
+        "getTransitionsForJiraIssue",
+        "getJiraIssueRemoteIssueLinks",
+        "getVisibleJiraProjects",
+        "getJiraProjectIssueTypesMetadata",
+        "getIssueLinkTypes",
+        "lookupJiraAccountId",
+        "search",
+        "fetch"
+      ]
+    },
+    {
+      "id": "sub-jira-demand",
+      "name": "Jira-Creator: Demand",
+      "model": "claude-haiku-4-5",
+      "systemPrompt": "Du erstellst Jira-Demand-Tickets für neue IT-Anforderungen.\nWorkflow:\n1. getVisibleJiraProjects()\n2. getJiraProjectIssueTypesMetadata()\n3. getJiraIssueTypeMetaWithFields()\n4. searchJiraIssuesUsingJql() – Duplikate prüfen\n5. lookupJiraAccountId()\n6. createJiraIssue() mit Pflichtfeldern\n7. createIssueLink() für verwandte Issues\n8. addCommentToJiraIssue() für Kontext\nImmer: Summary klar, Description mit Hintergrund + Ziel + Akzeptanzkriterien.",
+      "description": "Erstellt Anforderungs-/Feature-Tickets im DEMAND-Projekt.",
+      "modelParameters": { "temperature": 0.2, "max_tokens": 2000, "top_p": 0.85 },
+      "tools": [
+        "getVisibleJiraProjects",
+        "getJiraProjectIssueTypesMetadata",
+        "getJiraIssueTypeMetaWithFields",
+        "searchJiraIssuesUsingJql",
+        "lookupJiraAccountId",
+        "createJiraIssue",
+        "editJiraIssue",
+        "createIssueLink",
+        "getIssueLinkTypes",
+        "addCommentToJiraIssue"
+      ]
+    },
+    {
+      "id": "sub-jira-bug",
+      "name": "Jira-Creator: Bug",
+      "model": "claude-haiku-4-5",
+      "systemPrompt": "Du erstellst strukturierte Bug-Tickets in Jira.\nWorkflow:\n1. searchJiraIssuesUsingJql() – DUPLIKATE prüfen\n2. Bei Duplikat: addCommentToJiraIssue() statt neu erstellen\n3. getJiraIssueTypeMetaWithFields()\n4. lookupJiraAccountId()\n5. createJiraIssue() mit:\n   - Summary: [KOMPONENTE] Kurzbeschreibung\n   - Description: Schritte | Erwartet | Tatsächlich | Umgebung\n   - Priority je nach Impact\n6. createIssueLink() 'Duplicates'/'Relates to'\nKeine Annahmen – frage nach fehlenden Infos.",
+      "description": "Erstellt Bug-Reports mit vollständiger Fehlerstruktur.",
+      "modelParameters": { "temperature": 0.2, "max_tokens": 2000, "top_p": 0.85 },
+      "tools": [
+        "searchJiraIssuesUsingJql",
+        "getJiraIssue",
+        "getJiraProjectIssueTypesMetadata",
+        "getJiraIssueTypeMetaWithFields",
+        "getIssueLinkTypes",
+        "lookupJiraAccountId",
+        "createJiraIssue",
+        "editJiraIssue",
+        "createIssueLink",
+        "addCommentToJiraIssue"
+      ]
+    },
+    {
+      "id": "sub-jira-servicerequest",
+      "name": "Jira-Creator: ServiceRequest",
+      "model": "claude-haiku-4-5",
+      "systemPrompt": "Du erstellst IT-Service-Requests in Jira.\nKategorien: Hardware-Request | Software-Install | Access-Request | Account-Change | Network\nWorkflow:\n1. getVisibleJiraProjects() – IT-SD\n2. getJiraProjectIssueTypesMetadata()\n3. getJiraIssueTypeMetaWithFields() – SLA-Felder\n4. lookupJiraAccountId()\n5. searchJiraIssuesUsingJql() – ähnliche Requests?\n6. createJiraIssue() mit korrekter Kategorie + Priorität nach SLA\n7. transitionJiraIssue() → 'In Progress' wenn Automation greift\n8. addCommentToJiraIssue() Bestätigung\n9. addWorklogToJiraIssue() Bearbeitungszeit",
+      "description": "Erstellt Service-Requests (Hardware, Software, Zugriff, Account).",
+      "modelParameters": { "temperature": 0.2, "max_tokens": 1800, "top_p": 0.85 },
+      "tools": [
+        "getVisibleJiraProjects",
+        "getJiraProjectIssueTypesMetadata",
+        "getJiraIssueTypeMetaWithFields",
+        "lookupJiraAccountId",
+        "searchJiraIssuesUsingJql",
+        "createJiraIssue",
+        "editJiraIssue",
+        "transitionJiraIssue",
+        "addCommentToJiraIssue",
+        "addWorklogToJiraIssue",
+        "createIssueLink",
+        "getIssueLinkTypes"
+      ]
+    },
+    {
+      "id": "sub-automation",
+      "name": "Automation-Agent",
+      "model": "claude-haiku-4-5",
+      "systemPrompt": "Du führst IT-Automationen aus und dokumentierst Ergebnisse in Jira.\nSicherheitsregel: IMMER Bestätigung vom User BEVOR Aktionen ausgeführt werden.\nWorkflow:\n1. getJiraIssue() – Ticket-Details für Input\n2. Führe Automation aus (HTTP-Request an MCP-Endpunkt)\n3. transitionJiraIssue() – Status aktualisieren\n4. addCommentToJiraIssue() – Ergebnis dokumentieren\n5. addWorklogToJiraIssue() – Ausführungszeit\n6. editJiraIssue() – ggf. Resolution\nVerfügbare Automationen: User aktivieren/deaktivieren, Software via Intune pushen, VPN-Access, AD-Gruppen, Email-Weiterleitungen.\nNie ohne explizite User-Bestätigung ausführen.",
+      "description": "Führt IT-Automationen aus (Power Automate, Logic Apps, Intune) + dokumentiert in Jira.",
+      "modelParameters": { "temperature": 0.4, "max_tokens": 2500, "top_p": 0.9 },
+      "capabilities": ["tool_use"],
+      "tools": [
+        "getJiraIssue",
+        "transitionJiraIssue",
+        "addCommentToJiraIssue",
+        "editJiraIssue",
+        "addWorklogToJiraIssue",
+        "lookupJiraAccountId",
+        "searchJiraIssuesUsingJql"
+      ],
+      "externalConnections": {
+        "mcpEndpoints": [
+          "http://mcp.intern/powerautomate",
+          "http://mcp.intern/logicapps",
+          "http://mcp.intern/intune-tools"
+        ]
+      }
+    }
+  ]
+}
