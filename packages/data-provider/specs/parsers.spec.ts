@@ -7,14 +7,14 @@ import type { TUser, TConversation } from '../src/types';
 
 // Mock dayjs module with consistent date/time values regardless of environment
 jest.mock('dayjs', () => {
-  const makeMock = (offset: string) => ({
+  const makeMock = (offset: string, input?: string | number | Date) => ({
     format: (format: string) => {
       if (input === '2023-12-31T23:59:58.000Z') {
         if (format === 'YYYY-MM-DD') {
           return '2023-12-31';
         }
         if (format === 'YYYY-MM-DD HH:mm:ss Z') {
-          return '2023-12-31 23:59:58 +00:00';
+          return `2023-12-31 23:59:58 ${offset}`;
         }
         if (format === 'dddd') {
           return 'Sunday';
@@ -33,20 +33,31 @@ jest.mock('dayjs', () => {
         `Unhandled dayjs().format() call in mock: "${format}". Update the mock in parsers.spec.ts`,
       );
     },
-    toISOString: () => '2024-04-29T16:34:56.000Z',
+    toISOString: () =>
+      input === '2023-12-31T23:59:58.000Z'
+        ? '2023-12-31T23:59:58.000Z'
+        : '2024-04-29T16:34:56.000Z',
     isValid: () => true,
     tz: (timezone: string) => {
       if (timezone === 'America/New_York') {
-        return makeMock('-04:00');
+        return makeMock('-04:00', input);
       }
       if (timezone === 'Asia/Tokyo') {
-        return makeMock('+09:00');
+        return makeMock('+09:00', input);
+      }
+      if (timezone === 'Europe/Vienna') {
+        return makeMock('+02:00', input);
       }
       return { isValid: () => false };
     },
   });
 
-  const mockDayjs = () => makeMock('-04:00');
+  const mockDayjs = (input?: string | number | Date) => {
+    if (input === '2023-12-31T23:59:58.000Z') {
+      return makeMock('+00:00', input);
+    }
+    return makeMock('-04:00', input);
+  };
   mockDayjs.extend = jest.fn();
 
   return mockDayjs;
@@ -209,6 +220,24 @@ describe('replaceSpecialVars', () => {
       timezone: 'Asia/Tokyo',
     });
     expect(result).toBe('ISO: 2024-04-29T16:34:56.000Z');
+  });
+
+  test('should apply timezone to supplied anchor time', () => {
+    const result = replaceSpecialVars({
+      text: 'Now is {{current_datetime}}',
+      now: '2023-12-31T23:59:58.000Z',
+      timezone: 'Europe/Vienna',
+    });
+    expect(result).toBe('Now is 2023-12-31 23:59:58 +02:00 (Sunday)');
+  });
+
+  test('should fall back to anchor time when timezone is invalid even with anchor supplied', () => {
+    const result = replaceSpecialVars({
+      text: 'Now is {{current_datetime}}',
+      now: '2023-12-31T23:59:58.000Z',
+      timezone: 'Invalid/Timezone',
+    });
+    expect(result).toBe('Now is 2023-12-31 23:59:58 +00:00 (Sunday)');
   });
 
   test('should handle all variables with timezone and user combined', () => {
