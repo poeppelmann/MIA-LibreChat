@@ -9,7 +9,8 @@ services:
     depends_on:
       - mongodb
       - rag_api
-    image: registry.librechat.ai/danny-avila/librechat-dev:latest
+    #image: registry.librechat.ai/danny-avila/librechat-dev:latest
+    image: mia:builder
     restart: always
     user: "${UID}:${GID}"
     extra_hosts:
