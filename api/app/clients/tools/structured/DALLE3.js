@@ -4,7 +4,12 @@ const { v4: uuidv4 } = require('uuid');
 const { ProxyAgent, fetch } = require('undici');
 const { logger } = require('@librechat/data-schemas');
 const { Tool } = require('@librechat/agents/langchain/tools');
-const { getImageBasename, extractBaseURL, enforceImageSizeLimit } = require('@librechat/api');
+const {
+  getImageBasename,
+  extractBaseURL,
+  enforceImageSizeLimit,
+  createMinimalRetentionRequest,
+} = require('@librechat/api');
 const { FileContext, ContentTypes } = require('librechat-data-provider');
 
 const dalle3JsonSchema = {
@@ -49,6 +54,7 @@ class DALLE3 extends Tool {
 
     this.userId = fields.userId;
     this.tenantId = fields.req?.user?.tenantId;
+    this.retentionRequest = createMinimalRetentionRequest(fields.req);
     this.fileStrategy = fields.fileStrategy;
     /** @type {boolean} */
     this.isAgent = fields.isAgent;
@@ -236,6 +242,7 @@ Error Message: ${error.message}`);
         fileStrategy: this.fileStrategy,
         context: FileContext.image_generation,
         tenantId: this.tenantId,
+        req: this.retentionRequest,
       });
 
       if (this.returnMetadata) {
