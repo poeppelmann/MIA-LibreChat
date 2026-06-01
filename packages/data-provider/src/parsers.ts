@@ -447,9 +447,15 @@ export function replaceSpecialVars({
     return result;
   }
 
-  let now = inputNow != null ? dayjs(inputNow) : timezone ? dayjs().tz(timezone) : dayjs();
+  let now = inputNow != null ? dayjs(inputNow) : dayjs();
   if (!now.isValid()) {
     now = dayjs();
+  }
+  if (timezone) {
+    const zoned = now.tz(timezone);
+    if (zoned.isValid()) {
+      now = zoned;
+    }
   }
   const weekdayName = now.format('dddd');
 
