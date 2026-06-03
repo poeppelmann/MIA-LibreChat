@@ -1,7 +1,13 @@
 import { z } from 'zod';
 import type { ZodError } from 'zod';
 import type { TEndpointsConfig, TModelsConfig, TConfig } from './types';
-import { EModelEndpoint, eModelEndpointSchema, isAgentsEndpoint } from './schemas';
+import {
+  EModelEndpoint,
+  eModelEndpointSchema,
+  isAgentsEndpoint,
+  eReasoningParameterFormatSchema,
+  eReasoningResponseKeySchema,
+} from './schemas';
 import { ComponentTypes, SettingTypes, OptionTypes } from './generate';
 import { specsConfigSchema, TSpecsConfig } from './models';
 import { fileConfigSchema } from './file-config';
@@ -397,6 +403,13 @@ export const baseEndpointSchema = z.object({
     .optional(),
   titleEndpoint: z.string().optional(),
   titlePromptTemplate: z.string().optional(),
+  /**
+   * When conversation titles are generated. `immediate` (default) generates the
+   * title as soon as the request is made, in parallel with the response, from the
+   * user's first message. `final` defers generation until the full response
+   * completes (legacy behavior).
+   */
+  titleTiming: z.union([z.literal('immediate'), z.literal('final')]).optional(),
   /** Maximum characters allowed in a single tool result before truncation. */
   maxToolResultChars: z.number().positive().optional(),
 });
@@ -630,6 +643,8 @@ export const endpointSchema = baseEndpointSchema.merge(
     customParams: z
       .object({
         defaultParamsEndpoint: z.string().default('custom'),
+        reasoningFormat: eReasoningParameterFormatSchema.optional(),
+        reasoningKey: eReasoningResponseKeySchema.optional(),
         paramDefinitions: z.array(paramDefinitionSchema).optional(),
       })
       .strict()
@@ -654,6 +669,7 @@ export const azureEndpointSchema = z
         titleMethod: true,
         titleModel: true,
         titlePrompt: true,
+        titleTiming: true,
         titlePromptTemplate: true,
       })
       .partial(),
@@ -893,6 +909,7 @@ const mcpServersSchema = z
     create: z.boolean().optional(),
     share: z.boolean().optional(),
     public: z.boolean().optional(),
+    configureObo: z.boolean().optional(),
     trustCheckbox: z
       .object({
         label: localizedStringSchema.optional(),
@@ -952,6 +969,7 @@ export const interfaceSchema = z
     temporaryChatRetention: z.number().min(1).max(8760).optional(),
     autoSubmitFromUrl: z.boolean().optional(),
     retentionMode: z.nativeEnum(RetentionMode).default(RetentionMode.TEMPORARY),
+    retainAgentFiles: z.boolean().optional(),
     runCode: z.boolean().optional(),
     webSearch: z.boolean().optional(),
     peoplePicker: z
@@ -1071,7 +1089,7 @@ export type TRumConfig = {
   enabled: boolean;
   url: string;
   serviceName: string;
-  authMode: 'publicToken';
+  authMode: 'publicToken' | 'proxy';
   publicToken?: string;
   tracePropagationTargets?: string[];
   consoleCapture?: boolean;
@@ -1122,6 +1140,10 @@ export type TStartupConfig = {
   modelDescriptions?: Record<string, Record<string, string>>;
   sharedLinksEnabled: boolean;
   publicSharedLinksEnabled: boolean;
+  /** Effective default timing for when conversation titles become fetchable.
+   * `immediate` = fetch in parallel with the active stream (default);
+   * `final` = fetch only after the stream completes (legacy). */
+  titleGenerationTiming?: 'immediate' | 'final';
   analyticsGtmId?: string;
   rum?: TRumConfig;
   bundlerURL?: string;
