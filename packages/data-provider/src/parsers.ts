@@ -1,5 +1,10 @@
 import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc';
+import tz from 'dayjs/plugin/timezone';
 import type { ZodIssue } from 'zod';
+
+dayjs.extend(utc);
+dayjs.extend(tz);
 import type * as a from './types/assistants';
 import type * as s from './schemas';
 import type * as t from './types';
@@ -427,10 +432,14 @@ export function findLastSeparatorIndex(text: string, separators = SEPARATORS): n
 export function replaceSpecialVars({
   text,
   user,
+  conversationId,
+  timezone,
   now: inputNow,
 }: {
   text: string;
   user?: t.TUser | null;
+  conversationId?: string | null;
+  timezone?: string;
   now?: string | number | Date;
 }) {
   let result = text;
@@ -438,7 +447,16 @@ export function replaceSpecialVars({
     return result;
   }
 
-  const now = inputNow != null ? dayjs(inputNow) : dayjs();
+  let now = inputNow != null ? dayjs(inputNow) : dayjs();
+  if (!now.isValid()) {
+    now = dayjs();
+  }
+  if (timezone) {
+    const zoned = now.tz(timezone);
+    if (zoned.isValid()) {
+      now = zoned;
+    }
+  }
   const weekdayName = now.format('dddd');
 
   const currentDate = now.format('YYYY-MM-DD');
@@ -452,6 +470,10 @@ export function replaceSpecialVars({
 
   if (user && user.name) {
     result = result.replace(/{{\s*current_user\s*}}/gi, user.name);
+  }
+
+  if (typeof conversationId === 'string' && conversationId) {
+    result = result.replace(/{{conversation_id}}/gi, conversationId);
   }
 
   return result;
