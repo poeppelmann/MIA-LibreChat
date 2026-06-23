@@ -148,6 +148,52 @@ describe('MCPServerInspector', () => {
       expect(result.toolFunctions).toBeUndefined();
     });
 
+    it('should skip capabilities fetch when trusted config needs runtime user context', async () => {
+      mockDetectOAuthRequirement.mockResolvedValue({
+        requiresOAuth: false,
+        method: 'no-metadata-found',
+      });
+
+      const rawConfig: t.MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://mcp-server.example.com/mcp',
+        headers: {
+          'X-LibreChat-User-Email': '{{LIBRECHAT_USER_EMAIL}}',
+        },
+      };
+
+      const result = await MCPServerInspector.inspect('test_server', rawConfig);
+
+      expect(result).toEqual({
+        type: 'streamable-http',
+        url: 'https://mcp-server.example.com/mcp',
+        headers: {
+          'X-LibreChat-User-Email': '{{LIBRECHAT_USER_EMAIL}}',
+        },
+        requiresOAuth: false,
+        oauthMetadata: undefined,
+        initDuration: expect.any(Number),
+      });
+      expect(MCPConnectionFactory.create).not.toHaveBeenCalled();
+    });
+
+    it('should skip OAuth detection when trusted URL needs runtime user context', async () => {
+      const rawConfig: t.MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://mcp-server.example.com/users/{{LIBRECHAT_USER_USERNAME}}/mcp',
+      };
+
+      const result = await MCPServerInspector.inspect('test_server', rawConfig);
+
+      expect(result).toEqual({
+        type: 'streamable-http',
+        url: 'https://mcp-server.example.com/users/{{LIBRECHAT_USER_USERNAME}}/mcp',
+        initDuration: expect.any(Number),
+      });
+      expect(mockDetectOAuthRequirement).not.toHaveBeenCalled();
+      expect(MCPConnectionFactory.create).not.toHaveBeenCalled();
+    });
+
     it('should skip capabilities fetch when obo is configured', async () => {
       // OBO servers mint per-user delegated tokens at tool-call time; an
       // unauthenticated probe at inspection has no valid bearer to attach,
@@ -330,7 +376,7 @@ describe('MCPServerInspector', () => {
       });
 
       // Mock server with no tools
-      mockConnection.client.listTools = jest.fn().mockResolvedValue({ tools: [] });
+      mockConnection.fetchTools = jest.fn().mockResolvedValue([]);
 
       const result = await MCPServerInspector.inspect('test_server', rawConfig, mockConnection);
 
@@ -416,29 +462,27 @@ describe('MCPServerInspector', () => {
 
   describe('getToolFunctions()', () => {
     it('should convert MCP tools to LibreChat tool functions format', async () => {
-      mockConnection.client.listTools = jest.fn().mockResolvedValue({
-        tools: [
-          {
-            name: 'file_read',
-            description: 'Read a file',
-            inputSchema: {
-              type: 'object',
-              properties: { path: { type: 'string' } },
+      mockConnection.fetchTools = jest.fn().mockResolvedValue([
+        {
+          name: 'file_read',
+          description: 'Read a file',
+          inputSchema: {
+            type: 'object',
+            properties: { path: { type: 'string' } },
+          },
+        },
+        {
+          name: 'file_write',
+          description: 'Write a file',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              path: { type: 'string' },
+              content: { type: 'string' },
             },
           },
-          {
-            name: 'file_write',
-            description: 'Write a file',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                path: { type: 'string' },
-                content: { type: 'string' },
-              },
-            },
-          },
-        ],
-      });
+        },
+      ]);
 
       const result = await MCPServerInspector.getToolFunctions('my_server', mockConnection);
 
@@ -472,7 +516,7 @@ describe('MCPServerInspector', () => {
     });
 
     it('should handle empty tools list', async () => {
-      mockConnection.client.listTools = jest.fn().mockResolvedValue({ tools: [] });
+      mockConnection.fetchTools = jest.fn().mockResolvedValue([]);
 
       const result = await MCPServerInspector.getToolFunctions('my_server', mockConnection);
 
