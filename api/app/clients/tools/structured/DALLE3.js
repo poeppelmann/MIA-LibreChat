@@ -9,6 +9,7 @@ const {
   extractBaseURL,
   getProxyDispatcher,
   getEnvProxyDispatcher,
+  enforceImageSizeLimit,
   createMinimalRetentionRequest,
 } = require('@librechat/api');
 const { FileContext, ContentTypes } = require('librechat-data-provider');
@@ -194,12 +195,18 @@ Error Message: ${error.message}`);
       }
       const imageResponse = await fetch(theImageUrl, fetchOptions);
       const arrayBuffer = await imageResponse.arrayBuffer();
-      const base64 = Buffer.from(arrayBuffer).toString('base64');
+      const buffer = Buffer.from(arrayBuffer);
+      const contentType = imageResponse.headers.get('content-type');
+      const mimeType = contentType?.split(';')[0]?.trim() || 'image/png';
+      const { buffer: finalBuffer, mimeType: finalMimeType } = await enforceImageSizeLimit(
+        buffer,
+        mimeType,
+      );
       const content = [
         {
           type: ContentTypes.IMAGE_URL,
           image_url: {
-            url: `data:image/png;base64,${base64}`,
+            url: `data:${finalMimeType};base64,${finalBuffer.toString('base64')}`,
           },
         },
       ];

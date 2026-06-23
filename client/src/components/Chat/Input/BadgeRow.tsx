@@ -22,6 +22,7 @@ import Artifacts from './Artifacts';
 import MCPSelect from './MCPSelect';
 import WebSearch from './WebSearch';
 import Skills from './Skills';
+import ImageGeneration from './ImageGeneration';
 import store from '~/store';
 
 interface BadgeRowProps {
@@ -374,6 +375,7 @@ function BadgeRow({
             <WebSearch />
             <CodeInterpreter />
             <FileSearch />
+            <ImageGeneration />
             <Skills />
             <Artifacts />
             <MCPSelect />

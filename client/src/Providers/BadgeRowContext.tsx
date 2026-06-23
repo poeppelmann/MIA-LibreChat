@@ -20,6 +20,7 @@ interface BadgeRowContextType {
   webSearch: ReturnType<typeof useToolToggle>;
   artifacts: ReturnType<typeof useToolToggle>;
   fileSearch: ReturnType<typeof useToolToggle>;
+  imageGeneration: ReturnType<typeof useToolToggle>;
   codeInterpreter: ReturnType<typeof useToolToggle>;
   searchApiKeyForm: ReturnType<typeof useSearchApiKeyForm>;
   mcpServerManager: ReturnType<typeof useMCPServerManager>;
@@ -98,12 +99,14 @@ export default function BadgeRowProvider({
       const codeToggleKey = `${LocalStorageKeys.LAST_CODE_TOGGLE_}${storageSuffix}`;
       const webSearchToggleKey = `${LocalStorageKeys.LAST_WEB_SEARCH_TOGGLE_}${storageSuffix}`;
       const fileSearchToggleKey = `${LocalStorageKeys.LAST_FILE_SEARCH_TOGGLE_}${storageSuffix}`;
+      const imageGenToggleKey = `${LocalStorageKeys.LAST_IMAGE_GEN_TOGGLE_}${storageSuffix}`;
       const artifactsToggleKey = `${LocalStorageKeys.LAST_ARTIFACTS_TOGGLE_}${storageSuffix}`;
       const skillsToggleKey = `${LocalStorageKeys.LAST_SKILLS_TOGGLE_}${storageSuffix}`;
 
       const codeToggleValue = getTimestampedValue(codeToggleKey);
       const webSearchToggleValue = getTimestampedValue(webSearchToggleKey);
       const fileSearchToggleValue = getTimestampedValue(fileSearchToggleKey);
+      const imageGenToggleValue = getTimestampedValue(imageGenToggleKey);
       const artifactsToggleValue = getTimestampedValue(artifactsToggleKey);
       const skillsToggleValue = getTimestampedValue(skillsToggleKey);
 
@@ -130,6 +133,14 @@ export default function BadgeRowProvider({
           initialValues[Tools.file_search] = JSON.parse(fileSearchToggleValue);
         } catch (e) {
           console.error('Failed to parse file search toggle value:', e);
+        }
+      }
+
+      if (imageGenToggleValue !== null) {
+        try {
+          initialValues[AgentCapabilities.image_generation] = JSON.parse(imageGenToggleValue);
+        } catch (e) {
+          console.error('Failed to parse image gen toggle value:', e);
         }
       }
 
@@ -247,6 +258,14 @@ export default function BadgeRowProvider({
     storageContextKey,
     toolKey: AgentCapabilities.skills,
     localStorageKey: LocalStorageKeys.LAST_SKILLS_TOGGLE_,
+  });
+
+  /** Image Generation hook — toggle maps to gemini_image_gen tool server-side */
+  const imageGeneration = useToolToggle({
+    conversationId,
+    storageContextKey,
+    toolKey: AgentCapabilities.image_generation,
+    localStorageKey: LocalStorageKeys.LAST_IMAGE_GEN_TOGGLE_,
     isAuthenticated: true,
   });
 
@@ -257,6 +276,7 @@ export default function BadgeRowProvider({
     webSearch,
     artifacts,
     fileSearch,
+    imageGeneration,
     agentsConfig,
     conversationId,
     storageContextKey,
