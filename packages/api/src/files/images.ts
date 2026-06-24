@@ -6,7 +6,7 @@ import type { FormatEnum } from 'sharp';
  * Anthropic rejects tool-result images whose base64 payload exceeds 5 MiB.
  * The cap stays safely below that so a generated image is accepted by every provider.
  */
-export const MAX_IMAGE_BASE64_BYTES = 4.8 * 1024 * 1024;
+export const MAX_IMAGE_BASE64_BYTES: number = 4.8 * 1024 * 1024;
 
 const FORMAT_MIME_TYPES: Record<string, string> = {
   png: 'image/png',
