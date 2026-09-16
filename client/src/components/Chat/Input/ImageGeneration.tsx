@@ -6,8 +6,8 @@ import { useBadgeRowContext } from '~/Providers';
 
 function ImageGeneration() {
   const localize = useLocalize();
-  const { imageGeneration: imageGenerationData } = useBadgeRowContext();
-  const { toggleState: imageGeneration, debouncedChange, isPinned } = imageGenerationData;
+  const context = useBadgeRowContext();
+  const { toggleState: imageGeneration, debouncedChange, isPinned } = context?.imageGeneration ?? {};
 
   return (
     (isPinned || imageGeneration === true) && (
