@@ -21,6 +21,7 @@ import FileSearch from './FileSearch';
 import Artifacts from './Artifacts';
 import MCPSelect from './MCPSelect';
 import WebSearch from './WebSearch';
+import Skills from './Skills';
 import ImageGeneration from './ImageGeneration';
 import store from '~/store';
 
@@ -374,6 +375,7 @@ function BadgeRow({
             <WebSearch />
             <CodeInterpreter />
             <FileSearch />
+            <Skills />
             <ImageGeneration />
             <Artifacts />
             <MCPSelect />
