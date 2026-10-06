@@ -714,6 +714,26 @@ describe('loadAgent', () => {
       }
     });
 
+    test('should add gemini_image_gen when ephemeralAgent.image_generation is enabled', async () => {
+      const { EPHEMERAL_AGENT_ID } = Constants;
+      const mockReq = {
+        user: { id: 'user123' },
+        body: { promptPrefix: 'Test', ephemeralAgent: { image_generation: true } },
+      };
+
+      const result = await loadAgent(
+        {
+          req: mockReq,
+          agent_id: EPHEMERAL_AGENT_ID as string,
+          endpoint: 'openai',
+          model_parameters: { model: 'gpt-4' } as unknown as AgentModelParameters,
+        },
+        deps,
+      );
+
+      expect(result?.tools).toContain('gemini_image_gen');
+    });
+
     test('should return agent from different project (permissions checked at route level)', async () => {
       const authorId = new mongoose.Types.ObjectId();
       const userId = new mongoose.Types.ObjectId();
