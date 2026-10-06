@@ -55,7 +55,11 @@ No `--squash`. On conflicts (`git diff --name-only --diff-filter=U`):
 - `package-lock.json`: take the upstream version, then run `npm install` and review the diff.
 - If custom and upstream change the same logic and the resolution is not clear: ask the developer.
 
-Merge commit message: `Merge tag '<NEW_TAG>' into release`, followed by the list of conflicts and how each was resolved. Use the commit attribution from the system reminder.
+Commits and the PR title are written in English and follow the conventional format from `.github/CONTRIBUTING.md` (section 4): `type: summary in present tense`, with type one of `chore`, `docs`, `feat`, `fix`, `refactor`, `style`, `test`.
+
+- Merge commit message: `Merge tag '<NEW_TAG>' into release`, followed by the list of conflicts and how each was resolved (this mirrors git's own merge message and is the one exception to the `type:` prefix).
+- Any follow-up commit on the merge branch (for example porting custom code): `fix: port <what> to <new file>` or `chore: ...`.
+- Use the commit attribution from the system reminder.
 
 ## Step 5: Customization check (gate before the PR)
 
@@ -85,13 +89,11 @@ Check failures for merge causes first (custom code against the new upstream API)
 
 1. `git push -u origin merge/<NEW_TAG>-into-release`
 2. `gh pr create -R poeppelmann/MIA-LibreChat --draft --base release --head merge/<NEW_TAG>-into-release --title "chore: merge <NEW_TAG> into release"`
-3. PR body:
-   - Chosen tag and `OLD_TAG`
-   - Resolved conflicts and moved files
-   - Result of `check.sh` (summary line) and of the tests
-   - Notes from Step 3 (.env, config, Node, version)
-   - Manual test list: login, chat with streaming, "Image generation" button produces an image, `{{conversation_id}}` is replaced, branding, new env variables set in the target system
-   - Mandatory note: "Merging into `release` triggers the ACR build and overwrites the image tag `mia:<version>`. Merge only by the developer. Note the rollback tag/digest first."
+3. PR body: write it in English and follow `.github/pull_request_template.md` (sections `Summary`, `Change Type`, `Testing` with `Test Configuration`, `Checklist`). Delete irrelevant options and tick only what is true.
+   - `Summary`: chosen tag and `OLD_TAG`, resolved conflicts, moved files, notes from Step 3 (.env, config, Node, version)
+   - `Change Type`: tick "New feature" (upstream upgrade, non-breaking) or "Breaking change" if Step 3 found incompatible config/env changes
+   - `Testing`: result of `check.sh` (summary line) and of the tests, plus the manual test list: login, chat with streaming, "Image generation" button produces an image, `{{conversation_id}}` is replaced, branding, new env variables set in the target system
+   - Mandatory note in `Summary`: "Merging into `release` triggers the ACR build and overwrites the image tag `mia:<version>`. Merge only by the developer. Note the rollback tag/digest first."
    - Ends with `🤖 Generated with [Claude Code](https://claude.com/claude-code)`
 4. Show `gh pr checks <nr>` once. Do not wait for the merge and do not change anything else on the PR.
 
