@@ -10,6 +10,7 @@ const {
   loadServiceKey,
   getBalanceConfig,
   getEnvProxyDispatcher,
+  enforceImageSizeLimit,
   getTransactionsConfig,
 } = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
@@ -423,10 +424,12 @@ function createGeminiImageTool(fields = {}) {
         rawBuffer,
         imageOutputType,
       );
-      const imageData = convertedBuffer.toString('base64');
-      const mimeType = outputFormat === 'jpeg' ? 'image/jpeg' : `image/${outputFormat}`;
+      const { buffer: finalBuffer, mimeType } = await enforceImageSizeLimit(
+        convertedBuffer,
+        outputFormat === 'jpeg' ? 'image/jpeg' : `image/${outputFormat}`,
+      );
 
-      const dataUrl = `data:${mimeType};base64,${imageData}`;
+      const dataUrl = `data:${mimeType};base64,${finalBuffer.toString('base64')}`;
       const file_ids = [v4()];
       const content = [
         {
