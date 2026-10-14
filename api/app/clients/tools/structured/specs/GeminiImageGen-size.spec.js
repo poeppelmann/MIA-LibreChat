@@ -51,7 +51,7 @@ describe('GeminiImageGen tool-result image size', () => {
     jest.clearAllMocks();
   });
 
-  it('keeps a small generated image unchanged', async () => {
+  it('returns a small generated image as WebP without resizing it', async () => {
     const small = await sharp({
       create: { width: 64, height: 64, channels: 3, background: { r: 10, g: 20, b: 30 } },
     })
@@ -61,8 +61,10 @@ describe('GeminiImageGen tool-result image size', () => {
 
     const { mimeType, data } = await invokeTool();
 
-    expect(mimeType).toBe('image/png');
-    expect(data).toBe(small.toString('base64'));
+    expect(mimeType).toBe('image/webp');
+    const meta = await sharp(Buffer.from(data, 'base64')).metadata();
+    expect(meta.format).toBe('webp');
+    expect(meta.width).toBe(64);
   });
 
   it('shrinks an oversized generated image below the provider limit', async () => {

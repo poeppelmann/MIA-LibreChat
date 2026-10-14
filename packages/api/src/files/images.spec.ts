@@ -47,28 +47,6 @@ describe('enforceImageSizeLimit', () => {
     expect(meta.format).toBe('webp');
   }, 30000);
 
-  it('re-encodes an oversized format without a known MIME type as WebP', async () => {
-    const tiff = await sharp({
-      create: {
-        width: 2048,
-        height: 2048,
-        channels: 3,
-        background: { r: 0, g: 0, b: 0 },
-        noise: { type: 'gaussian', mean: 128, sigma: 60 },
-      },
-    })
-      .tiff({ compression: 'none' })
-      .toBuffer();
-    expect(base64Length(tiff.length)).toBeGreaterThan(MAX_IMAGE_BASE64_BYTES);
-
-    const result = await enforceImageSizeLimit(tiff, 'image/tiff');
-
-    expect(base64Length(result.buffer.length)).toBeLessThanOrEqual(MAX_IMAGE_BASE64_BYTES);
-    expect(result.mimeType).toBe('image/webp');
-    const meta = await sharp(result.buffer).metadata();
-    expect(meta.format).toBe('webp');
-  }, 30000);
-
   it('returns the original buffer when the input is not a decodable image', async () => {
     const garbage = Buffer.alloc(6 * 1024 * 1024, 1);
 

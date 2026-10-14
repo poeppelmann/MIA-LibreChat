@@ -85,6 +85,7 @@ describe('image tools - agent mode ToolMessage format', () => {
         },
       }));
       undici.fetch.mockResolvedValue({
+        headers: { get: () => 'image/png' },
         arrayBuffer: () => Promise.resolve(Buffer.from(FAKE_BASE64, 'base64')),
       });
     });
@@ -172,6 +173,7 @@ describe('image tools - agent mode ToolMessage format', () => {
         data: { status: 'Ready', result: { sample: 'https://example.com/image.png' } },
       });
       fetch.mockResolvedValue({
+        headers: { get: () => 'image/png' },
         arrayBuffer: () => Promise.resolve(Buffer.from(FAKE_BASE64, 'base64')),
       });
     });
