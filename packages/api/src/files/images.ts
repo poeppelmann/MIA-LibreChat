@@ -9,12 +9,10 @@ import type { FormatEnum } from 'sharp';
  */
 export const MAX_IMAGE_BASE64_BYTES: number = 4.8 * 1024 * 1024;
 
-const FORMAT_MIME_TYPES: Partial<Record<keyof FormatEnum, string>> = {
-  png: 'image/png',
+/** Lossy formats kept on re-encode; anything else is re-encoded as WebP. */
+const LOSSY_MIME_TYPES: Partial<Record<keyof FormatEnum, string>> = {
   jpeg: 'image/jpeg',
-  jpg: 'image/jpeg',
   webp: 'image/webp',
-  gif: 'image/gif',
 };
 
 export interface SizeLimitedImage {
@@ -22,15 +20,15 @@ export interface SizeLimitedImage {
   mimeType: string;
 }
 
-/** Approximate base64-encoded length of a buffer (4 output chars per 3 input bytes). */
+/** Padded base64-encoded length of a buffer (4 output chars per 3 input bytes). */
 export function base64Length(byteLength: number): number {
   return Math.ceil(byteLength / 3) * 4;
 }
 
 /**
  * Caps a tool-result image at the provider base64 size limit. Re-compresses and,
- * if still too large, progressively downscales the image. Oversized PNGs switch
- * to WebP since lossless PNG cannot compress enough on its own. Returns the
+ * if still too large, progressively downscales the image. Formats other than JPEG
+ * and WebP switch to WebP since lossless formats cannot compress enough on their own. Returns the
  * original buffer untouched when it is already small enough or when re-encoding
  * fails — a too-large image is preferable to a crashed tool call.
  */
@@ -44,8 +42,9 @@ export async function enforceImageSizeLimit(
 
   try {
     const { format, width } = await sharp(inputBuffer).metadata();
-    const targetFormat: keyof FormatEnum = format == null || format === 'png' ? 'webp' : format;
-    const targetMimeType = FORMAT_MIME_TYPES[targetFormat] ?? mimeType;
+    const keepFormat = format != null && LOSSY_MIME_TYPES[format] != null;
+    const targetFormat: keyof FormatEnum = keepFormat ? format : 'webp';
+    const targetMimeType = LOSSY_MIME_TYPES[targetFormat] ?? 'image/webp';
 
     let quality = 80;
     let scale = 1;
@@ -61,8 +60,10 @@ export async function enforceImageSizeLimit(
       }
       if (quality > 50) {
         quality -= 15;
-      } else {
+      } else if (width) {
         scale *= 0.8;
+      } else {
+        break;
       }
     }
 
