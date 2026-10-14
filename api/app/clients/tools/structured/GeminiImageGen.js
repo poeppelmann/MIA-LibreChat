@@ -10,10 +10,13 @@ const {
   loadServiceKey,
   getBalanceConfig,
   getEnvProxyDispatcher,
+  enforceImageSizeLimit,
   getTransactionsConfig,
 } = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { spendTokens, getFiles } = require('~/models');
+
+const OUTPUT_MIME_TYPES = { jpeg: 'image/jpeg', webp: 'image/webp' };
 
 /**
  * Configure proxy support for Google APIs
@@ -318,7 +321,7 @@ function createGeminiImageTool(fields = {}) {
 
   const { req, imageFiles = [], userId, fileStrategy, GEMINI_API_KEY, GOOGLE_KEY } = fields;
 
-  const imageOutputType = fields.imageOutputType || EImageOutputType.PNG;
+  const imageOutputType = fields.imageOutputType || EImageOutputType.WEBP;
 
   const geminiImageGenTool = tool(
     async ({ prompt, image_ids, aspectRatio, imageSize }, runnableConfig) => {
@@ -419,14 +422,16 @@ function createGeminiImageTool(fields = {}) {
       }
 
       const rawBuffer = Buffer.from(rawImageData, 'base64');
-      const { buffer: convertedBuffer, format: outputFormat } = await convertImageFormat(
+      const { buffer: convertedBuffer, format } = await convertImageFormat(
         rawBuffer,
         imageOutputType,
       );
-      const imageData = convertedBuffer.toString('base64');
-      const mimeType = outputFormat === 'jpeg' ? 'image/jpeg' : `image/${outputFormat}`;
-
-      const dataUrl = `data:${mimeType};base64,${imageData}`;
+      const initialMimeType = OUTPUT_MIME_TYPES[format] ?? 'image/png';
+      const { buffer: finalBuffer, mimeType } = await enforceImageSizeLimit(
+        convertedBuffer,
+        initialMimeType,
+      );
+      const dataUrl = `data:${mimeType};base64,${finalBuffer.toString('base64')}`;
       const file_ids = [v4()];
       const content = [
         {

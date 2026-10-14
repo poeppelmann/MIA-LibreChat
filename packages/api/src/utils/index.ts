@@ -7,6 +7,7 @@ export * from './email';
 export * from './env';
 export * from './events';
 export * from './files';
+export * from './image';
 export * from './import';
 export * from './generators';
 export * from './graph';

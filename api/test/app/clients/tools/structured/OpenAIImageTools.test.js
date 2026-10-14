@@ -27,6 +27,8 @@ jest.mock('@librechat/api', () => ({
   extractBaseURL: jest.fn((url) => url),
   getProxyDispatcher: jest.fn(() => undefined),
   applyAxiosProxyConfig: jest.fn(),
+  enforceImageSizeLimit: jest.requireActual('@librechat/api').enforceImageSizeLimit,
+  resolveImageGenOaiDefaults: jest.requireActual('@librechat/api').resolveImageGenOaiDefaults,
 }));
 
 jest.mock('~/server/services/Files/strategies', () => ({

@@ -11,9 +11,16 @@ const {
   extractBaseURL,
   getProxyDispatcher,
   applyAxiosProxyConfig,
+  enforceImageSizeLimit,
+  resolveImageGenOaiDefaults,
 } = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getFiles } = require('~/models');
+
+const OUTPUT_MIME_TYPES = {
+  [EImageOutputType.PNG]: 'image/png',
+  [EImageOutputType.WEBP]: 'image/webp',
+};
 
 const displayMessage =
   "The tool displayed an image. All generated images are already plainly visible, so don't repeat the descriptions in detail. Do not list download links as they are available in the UI already. The user may download the images by clicking on them, but do not mention anything about downloading to the user.";
@@ -56,7 +63,6 @@ function createAbortHandler() {
  * @param {string} fields.IMAGE_GEN_OAI_API_KEY - The OpenAI API key
  * @param {boolean} [fields.override] - Whether to override the API key check, necessary for app initialization
  * @param {MongoFile[]} [fields.imageFiles] - The images to be used for editing
- * @param {string} [fields.imageOutputType] - The image output type configuration
  * @param {string} [fields.fileStrategy] - The file storage strategy
  * @returns {Array<ReturnType<tool>>} - Array of image tools
  */
@@ -68,8 +74,8 @@ function createOpenAIImageTools(fields = {}) {
     throw new Error('This tool is only available for agents.');
   }
   const { req } = fields;
-  const imageOutputType = fields.imageOutputType || EImageOutputType.PNG;
   const appFileStrategy = fields.fileStrategy;
+  const budgetDefaults = resolveImageGenOaiDefaults();
 
   const getApiKey = () => {
     const apiKey = process.env.IMAGE_GEN_OAI_API_KEY ?? '';
@@ -113,14 +119,7 @@ function createOpenAIImageTools(fields = {}) {
    */
   const imageGenTool = tool(
     async (
-      {
-        prompt,
-        background = 'auto',
-        n = 1,
-        output_compression = 100,
-        quality = 'auto',
-        size = 'auto',
-      },
+      { prompt, background = 'auto', n = 1, output_compression, quality = 'auto', size = 'auto' },
       runnableConfig,
     ) => {
       if (!prompt) {
@@ -136,17 +135,17 @@ function createOpenAIImageTools(fields = {}) {
 
       /** @type {OpenAI} */
       const openai = new OpenAI(clientConfig);
-      let output_format = imageOutputType;
-      if (
-        background === 'transparent' &&
-        output_format !== EImageOutputType.PNG &&
-        output_format !== EImageOutputType.WEBP
-      ) {
-        logger.warn(
-          '[ImageGenOAI] Transparent background requires PNG or WebP format, defaulting to PNG',
-        );
+      let output_format = budgetDefaults.outputFormat;
+      if (background === 'transparent' && output_format !== EImageOutputType.PNG) {
+        logger.warn('[ImageGenOAI] Transparent background requires PNG format; using PNG');
         output_format = EImageOutputType.PNG;
       }
+      const effectiveCompression =
+        typeof output_compression === 'number'
+          ? output_compression
+          : budgetDefaults.outputCompression;
+      const effectiveQuality = quality === 'auto' ? budgetDefaults.defaultQuality : quality;
+      const effectiveSize = size === 'auto' ? budgetDefaults.defaultSize : size;
 
       let resp;
       /** @type {AbortSignal} */
@@ -170,10 +169,10 @@ function createOpenAIImageTools(fields = {}) {
             output_format,
             output_compression:
               output_format === EImageOutputType.WEBP || output_format === EImageOutputType.JPEG
-                ? output_compression
+                ? effectiveCompression
                 : undefined,
-            quality,
-            size,
+            quality: effectiveQuality,
+            size: effectiveSize,
           },
           {
             signal: derivedSignal,
@@ -206,11 +205,16 @@ Error Message: ${error.message}`);
         );
       }
 
+      const mimeType = OUTPUT_MIME_TYPES[output_format] ?? 'image/jpeg';
+      const { buffer: finalBuffer, mimeType: finalMimeType } = await enforceImageSizeLimit(
+        Buffer.from(base64Image, 'base64'),
+        mimeType,
+      );
       const content = [
         {
           type: ContentTypes.IMAGE_URL,
           image_url: {
-            url: `data:image/${output_format};base64,${base64Image}`,
+            url: `data:${finalMimeType};base64,${finalBuffer.toString('base64')}`,
           },
         },
       ];
@@ -244,14 +248,24 @@ Error Message: ${error.message}`);
         };
       }
 
+      const effectiveQuality = quality === 'auto' ? budgetDefaults.defaultQuality : quality;
+      const effectiveSize = size === 'auto' ? budgetDefaults.defaultSize : size;
+
       const formData = new FormData();
       formData.append('model', imageModel);
       formData.append('prompt', replaceUnwantedChars(prompt));
       // TODO: `mask` support
       // TODO: more than 1 image support
       // formData.append('n', n.toString());
-      formData.append('quality', quality);
-      formData.append('size', size);
+      formData.append('quality', effectiveQuality);
+      formData.append('size', effectiveSize);
+      formData.append('output_format', budgetDefaults.outputFormat);
+      if (
+        budgetDefaults.outputFormat === EImageOutputType.WEBP ||
+        budgetDefaults.outputFormat === EImageOutputType.JPEG
+      ) {
+        formData.append('output_compression', String(budgetDefaults.outputCompression));
+      }
 
       /** @type {Record<FileSources, undefined | NodeStreamDownloader<File>>} */
       const streamMethods = {};
@@ -376,11 +390,17 @@ Error Message: ${error.message}`);
           );
         }
 
+        const editFormat = budgetDefaults.outputFormat;
+        const mimeType = OUTPUT_MIME_TYPES[editFormat] ?? 'image/jpeg';
+        const { buffer: finalBuffer, mimeType: finalMimeType } = await enforceImageSizeLimit(
+          Buffer.from(base64Image, 'base64'),
+          mimeType,
+        );
         const content = [
           {
             type: ContentTypes.IMAGE_URL,
             image_url: {
-              url: `data:image/${imageOutputType};base64,${base64Image}`,
+              url: `data:${finalMimeType};base64,${finalBuffer.toString('base64')}`,
             },
           },
         ];

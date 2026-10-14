@@ -7,6 +7,7 @@ const {
   applyAxiosProxyConfig,
   createMinimalRetentionRequest,
   getHttpsProxyAgent,
+  enforceImageSizeLimit,
 } = require('@librechat/api');
 const { FileContext, ContentTypes } = require('librechat-data-provider');
 
@@ -313,12 +314,18 @@ class FluxAPI extends Tool {
         }
         const imageResponse = await fetch(imageUrl, fetchOptions);
         const arrayBuffer = await imageResponse.arrayBuffer();
-        const base64 = Buffer.from(arrayBuffer).toString('base64');
+        const buffer = Buffer.from(arrayBuffer);
+        const contentType = imageResponse.headers.get('content-type');
+        const mimeType = contentType?.split(';')[0]?.trim() || 'image/png';
+        const { buffer: finalBuffer, mimeType: finalMimeType } = await enforceImageSizeLimit(
+          buffer,
+          mimeType,
+        );
         const content = [
           {
             type: ContentTypes.IMAGE_URL,
             image_url: {
-              url: `data:image/png;base64,${base64}`,
+              url: `data:${finalMimeType};base64,${finalBuffer.toString('base64')}`,
             },
           },
         ];
@@ -546,12 +553,18 @@ class FluxAPI extends Tool {
         }
         const imageResponse = await fetch(imageUrl, fetchOptions);
         const arrayBuffer = await imageResponse.arrayBuffer();
-        const base64 = Buffer.from(arrayBuffer).toString('base64');
+        const buffer = Buffer.from(arrayBuffer);
+        const contentType = imageResponse.headers.get('content-type');
+        const mimeType = contentType?.split(';')[0]?.trim() || 'image/png';
+        const { buffer: finalBuffer, mimeType: finalMimeType } = await enforceImageSizeLimit(
+          buffer,
+          mimeType,
+        );
         const content = [
           {
             type: ContentTypes.IMAGE_URL,
             image_url: {
-              url: `data:image/png;base64,${base64}`,
+              url: `data:${finalMimeType};base64,${finalBuffer.toString('base64')}`,
             },
           },
         ];
