@@ -24,6 +24,10 @@ jobs:
         id: version
         run: echo "tag=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
 
+      - name: Compute build metadata
+        id: build
+        run: echo "date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
+
       - name: Azure login (OIDC)
         uses: azure/login@v2
         with:
@@ -46,3 +50,7 @@ jobs:
           file: ./Dockerfile.multi
           push: true
           tags: ${{ vars.ACR_REGISTRY_SERVER }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.tag }}
+          build-args: |
+            BUILD_COMMIT=${{ github.sha }}
+            BUILD_BRANCH=${{ github.ref_name }}
+            BUILD_DATE=${{ steps.build.outputs.date }}
