@@ -7,7 +7,7 @@ on:
 
 permissions:
   id-token: write
-  contents: read
+  contents: write
 
 jobs:
   build-and-push:
@@ -20,9 +20,28 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Read version
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install registry dependency
+        run: npm install --no-save --no-package-lock --ignore-scripts js-yaml@4.2.0
+
+      - name: Validate registry and resolve versions
         id: version
-        run: echo "tag=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+        run: |
+          set -o pipefail
+          node scripts/mia/registry.mjs validate
+          node scripts/mia/registry.mjs generate --check
+          node scripts/mia/registry.mjs release | tee -a "$GITHUB_OUTPUT"
+
+      - name: Refuse to overwrite an existing git tag
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/mia-${{ steps.version.outputs.mia }}" >/dev/null 2>&1; then
+            echo "Git tag mia-${{ steps.version.outputs.mia }} already exists. Bump docs/mia/VERSION."
+            exit 1
+          fi
 
       - name: Compute build metadata
         id: build
@@ -40,17 +59,53 @@ jobs:
           az account show -o table
           az acr show -n "${{ vars.ACR_NAME }}" -o table
 
+      - name: Refuse to overwrite an existing image tag
+        run: |
+          if az acr repository show --name "${{ vars.ACR_NAME }}" --image "${{ env.IMAGE_NAME }}:${{ steps.version.outputs.mia }}" >/dev/null 2>&1; then
+            echo "Image tag ${{ env.IMAGE_NAME }}:${{ steps.version.outputs.mia }} already exists in ACR. Bump docs/mia/VERSION."
+            exit 1
+          fi
+
       - name: Login to ACR
         run: az acr login --name "${{ vars.ACR_NAME }}"
 
       - name: Build and push Docker image
+        id: push
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./Dockerfile.multi
           push: true
-          tags: ${{ vars.ACR_REGISTRY_SERVER }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.tag }}
+          tags: ${{ vars.ACR_REGISTRY_SERVER }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.mia }}
+          labels: |
+            org.opencontainers.image.version=${{ steps.version.outputs.mia }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.created=${{ steps.build.outputs.date }}
+            de.poeppelmann.mia.release=${{ steps.version.outputs.mia }}
+            de.poeppelmann.mia.librechat-version=${{ steps.version.outputs.librechat }}
           build-args: |
             BUILD_COMMIT=${{ github.sha }}
             BUILD_BRANCH=${{ github.ref_name }}
             BUILD_DATE=${{ steps.build.outputs.date }}
+
+      - name: Tag release commit
+        run: |
+          git tag "mia-${{ steps.version.outputs.mia }}" "${{ github.sha }}"
+          git push origin "mia-${{ steps.version.outputs.mia }}"
+
+      - name: Summary for MIA-Config handover
+        run: |
+          {
+            echo "## MIA ${{ steps.version.outputs.mia }} (LibreChat ${{ steps.version.outputs.librechat }})"
+            echo
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| Image | \`${{ vars.ACR_REGISTRY_SERVER }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.mia }}\` |"
+            echo "| Digest | \`${{ steps.push.outputs.digest }}\` |"
+            echo "| MIA release | ${{ steps.version.outputs.mia }} |"
+            echo "| LibreChat base | ${{ steps.version.outputs.librechat }} |"
+            echo "| Commit | ${{ github.sha }} |"
+            echo
+            echo "Next: scan the digest, then set it in MIA-Config (dev, test, prod). See docs/mia/UPSTREAM-UPDATE.md."
+          } >> "$GITHUB_STEP_SUMMARY"

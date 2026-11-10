@@ -1,0 +1,56 @@
+name: MIA registry
+
+on:
+  pull_request:
+    branches: ["release"]
+
+permissions:
+  contents: read
+
+jobs:
+  registry:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install registry dependency
+        run: npm install --no-save --no-package-lock --ignore-scripts js-yaml@4.2.0
+
+      - name: Validate registry
+        run: node scripts/mia/registry.mjs validate
+
+      - name: Registry tests
+        run: node --test "scripts/mia/*.test.mjs"
+
+      - name: Generated files are current
+        run: node scripts/mia/registry.mjs generate --check
+
+      - name: Release versions are consistent
+        run: node scripts/mia/registry.mjs release
+
+      - name: Fetch upstream tag
+        run: |
+          LIBRECHAT_VERSION="$(node -p "require('./package.json').version")"
+          git fetch --depth=1 --no-tags https://github.com/danny-avila/LibreChat.git "refs/tags/${LIBRECHAT_VERSION}:refs/tags/${LIBRECHAT_VERSION}"
+          echo "LIBRECHAT_VERSION=${LIBRECHAT_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Customizations are intact
+        run: node scripts/mia/registry.mjs check "$LIBRECHAT_VERSION"
+
+      - name: PR names Jira ticket and MIA release
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_BRANCH: ${{ github.head_ref }}
+        run: |
+          printf '%s' "$PR_BODY" | grep -Eq 'Jira ticket:\s*MIA-[0-9]+' || { echo "PR body needs 'Jira ticket: MIA-123'"; exit 1; }
+          printf '%s' "$PR_BODY" | grep -Eq 'MIA release:\s*[0-9]+\.[0-9]+\.[0-9]+' || { echo "PR body needs 'MIA release: 2.4.0'"; exit 1; }
+          RELEASE="$(printf '%s' "$PR_BODY" | grep -Eo 'MIA release:\s*[0-9]+\.[0-9]+\.[0-9]+' | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+          VERSION="$(tr -d '[:space:]' < docs/mia/VERSION)"
+          [ "$RELEASE" = "$VERSION" ] || { echo "PR says MIA release $RELEASE but docs/mia/VERSION is $VERSION"; exit 1; }

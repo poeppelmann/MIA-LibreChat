@@ -39,3 +39,13 @@ Please delete any irrelevant options.
 - [ ] Local unit tests pass with my changes
 - [ ] Any changes dependent on mine have been merged and published in downstream modules.
 - [ ] A pull request for updating the documentation has been submitted.
+
+## MIA release
+
+Required for pull requests into `release`. The values come from Jira; the CI only checks the format.
+
+Jira ticket: MIA-
+MIA release: 
+
+- [ ] `docs/mia/VERSION` is bumped to the MIA release above
+- [ ] A customization was added, changed or removed: its `docs/mia/customizations/*.md` has a new `changes` entry and `npm run mia:generate` was run
