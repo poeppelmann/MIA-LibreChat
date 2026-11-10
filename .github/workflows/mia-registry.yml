@@ -3,6 +3,7 @@ name: MIA registry
 on:
   pull_request:
     branches: ["release"]
+    types: [opened, edited, synchronize, reopened]
 
 permissions:
   contents: read
@@ -21,7 +22,7 @@ jobs:
           node-version-file: .nvmrc
 
       - name: Install registry dependency
-        run: npm install --no-save --no-package-lock --ignore-scripts js-yaml@4.2.0
+        run: npm ci --prefix scripts/mia --ignore-scripts
 
       - name: Validate registry
         run: node scripts/mia/registry.mjs validate
@@ -35,6 +36,9 @@ jobs:
       - name: Release versions are consistent
         run: node scripts/mia/registry.mjs release
 
+      - name: MIA release is new (no git tag yet)
+        run: node scripts/mia/registry.mjs tagfree
+
       - name: Fetch upstream tag
         run: |
           LIBRECHAT_VERSION="$(node -p "require('./package.json').version")"
@@ -47,7 +51,6 @@ jobs:
       - name: PR names Jira ticket and MIA release
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
-          PR_BRANCH: ${{ github.head_ref }}
         run: |
           printf '%s' "$PR_BODY" | grep -Eq 'Jira ticket:\s*MIA-[0-9]+' || { echo "PR body needs 'Jira ticket: MIA-123'"; exit 1; }
           printf '%s' "$PR_BODY" | grep -Eq 'MIA release:\s*[0-9]+\.[0-9]+\.[0-9]+' || { echo "PR body needs 'MIA release: 2.4.0'"; exit 1; }

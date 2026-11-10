@@ -1,0 +1,9 @@
+{
+  "name": "mia-registry",
+  "private": true,
+  "type": "module",
+  "description": "Tooling for the MIA customization registry (docs/mia). Installed separately from the LibreChat workspaces.",
+  "dependencies": {
+    "js-yaml": "4.3.2"
+  }
+}

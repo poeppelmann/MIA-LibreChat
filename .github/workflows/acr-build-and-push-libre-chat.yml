@@ -9,8 +9,13 @@ permissions:
   id-token: write
   contents: write
 
+concurrency:
+  group: acr-release
+  cancel-in-progress: false
+
 jobs:
   build-and-push:
+    if: github.ref == 'refs/heads/release'
     runs-on: ubuntu-latest
 
     env:
@@ -26,7 +31,7 @@ jobs:
           node-version-file: .nvmrc
 
       - name: Install registry dependency
-        run: npm install --no-save --no-package-lock --ignore-scripts js-yaml@4.2.0
+        run: npm ci --prefix scripts/mia --ignore-scripts
 
       - name: Validate registry and resolve versions
         id: version
@@ -36,12 +41,8 @@ jobs:
           node scripts/mia/registry.mjs generate --check
           node scripts/mia/registry.mjs release | tee -a "$GITHUB_OUTPUT"
 
-      - name: Refuse to overwrite an existing git tag
-        run: |
-          if git ls-remote --exit-code --tags origin "refs/tags/mia-${{ steps.version.outputs.mia }}" >/dev/null 2>&1; then
-            echo "Git tag mia-${{ steps.version.outputs.mia }} already exists. Bump docs/mia/VERSION."
-            exit 1
-          fi
+      - name: Refuse to reuse an existing git tag
+        run: node scripts/mia/registry.mjs tagfree
 
       - name: Compute build metadata
         id: build
@@ -61,8 +62,17 @@ jobs:
 
       - name: Refuse to overwrite an existing image tag
         run: |
-          if az acr repository show --name "${{ vars.ACR_NAME }}" --image "${{ env.IMAGE_NAME }}:${{ steps.version.outputs.mia }}" >/dev/null 2>&1; then
+          set +e
+          OUTPUT="$(az acr repository show --name "${{ vars.ACR_NAME }}" --image "${{ env.IMAGE_NAME }}:${{ steps.version.outputs.mia }}" 2>&1)"
+          STATUS=$?
+          set -e
+          if [ "$STATUS" -eq 0 ]; then
             echo "Image tag ${{ env.IMAGE_NAME }}:${{ steps.version.outputs.mia }} already exists in ACR. Bump docs/mia/VERSION."
+            exit 1
+          fi
+          if ! printf '%s' "$OUTPUT" | grep -Eiq 'not found|could not be found|does not exist|manifest unknown|name unknown'; then
+            echo "Could not tell whether the image tag exists:"
+            echo "$OUTPUT"
             exit 1
           fi
 
@@ -93,6 +103,11 @@ jobs:
         run: |
           git tag "mia-${{ steps.version.outputs.mia }}" "${{ github.sha }}"
           git push origin "mia-${{ steps.version.outputs.mia }}"
+
+      - name: Lock image tag
+        run: |
+          az acr repository update --name "${{ vars.ACR_NAME }}" --image "${{ env.IMAGE_NAME }}:${{ steps.version.outputs.mia }}" --write-enabled false \
+            || echo "::warning::Could not lock ${{ env.IMAGE_NAME }}:${{ steps.version.outputs.mia }}; the tag stays writable in ACR."
 
       - name: Summary for MIA-Config handover
         run: |

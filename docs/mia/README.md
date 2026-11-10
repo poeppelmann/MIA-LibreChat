@@ -23,7 +23,8 @@ refuses to build when `docs/mia/VERSION`, the registry and `package.json` disagr
 ## A customization file
 
 The file name is the Jira key (`MIA-254.md`). Customizations that existed before the registry (no ticket)
-are `baseline-<slug>.md` with `jira: null`; they get a key when someone changes them.
+are `baseline-<slug>.md` with `jira: null`. They keep that file name; later changes are recorded as new
+`changes` entries that carry the ticket of the change.
 
 ```yaml
 ---
@@ -37,16 +38,17 @@ checks:                        # run by `npm run mia:check`, one per line
   - exists path
   - differs path                # file must differ from the upstream tag (branding)
   - contains path => text       # file must contain text
-changes:                       # history, one entry per MIA release in which it changed
+changes:                       # history, NEWEST FIRST, one entry per MIA release in which it changed
   - { mia: 2.4.0, base: v0.8.8, jira: MIA-312, kind: kept, note: "Re-checked after the 0.8.8 merge" }
   - { mia: 2.3.0, base: v0.8.7, kind: baseline, note: "Existing when the registry was introduced" }
 ---
 Free text: how it works, how to test it manually, what to watch when merging upstream.
 ```
 
-`kind` is one of `added`, `changed`, `fixed`, `adapted` (re-applied to a changed upstream), `removed`,
+The list must be sorted newest first (validated). Only these keys are allowed in the front matter; unknown
+keys, wrong types and an active entry without `checks` fail validation. `kind` is one of `added`, `changed`, `fixed`, `adapted` (re-applied to a changed upstream), `removed`,
 `kept` (checked after an upstream update, nothing to do), `baseline`. A `removed` entry sets
-`status: removed`; the file stays as history. `since` and `removed in` in the overview are derived from `changes`.
+`status: removed` and is the first entry; the file stays as history. `since` and `removed in` in the overview are derived from `changes`.
 
 ## Commands
 
@@ -56,6 +58,10 @@ Free text: how it works, how to test it manually, what to watch when merging ups
 | `npm run mia:generate` | Regenerate `OVERVIEW.md` and `CHANGELOG-MIA.md` (`-- --check` only verifies) |
 | `npm run mia:check -- v0.8.7` | Every customization is still in the working tree, measured against the upstream tag |
 | `npm run mia:review -- v0.8.7 v0.8.8` | Which customizations touch files that upstream changed between two tags |
+| `node scripts/mia/registry.mjs tagfree` | Fails if the git tag `mia-<VERSION>` already exists on `origin` (also if the lookup itself fails) |
+
+The tool installs its own dependency: `npm ci --prefix scripts/mia`. Every command except `validate` and
+`tagfree` validates the registry first.
 
 ## Pull requests into `release`
 

@@ -10,6 +10,8 @@ files:
   - docs/mia/VERSION
   - scripts/mia/registry.mjs
   - scripts/mia/registry.test.mjs
+  - scripts/mia/package.json
+  - scripts/mia/package-lock.json
   - .github/workflows/mia-registry.yml
   - .github/pull_request_template.md
   - .claude/skills/upstream-merge/SKILL.md
@@ -18,6 +20,7 @@ files:
 checks:
   - exists docs/mia/VERSION
   - exists scripts/mia/registry.mjs
+  - exists scripts/mia/package-lock.json
   - exists .github/workflows/mia-registry.yml
   - contains .github/pull_request_template.md => MIA release
   - exists .claude/skills/upstream-merge/SKILL.md

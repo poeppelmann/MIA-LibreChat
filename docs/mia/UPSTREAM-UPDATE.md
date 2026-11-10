@@ -47,7 +47,7 @@ For every customization from the review (and a glance at the others):
 | Upstream changed the surrounding code, MIA change re-applied | `kind: adapted`, `status: adapted` |
 | Upstream now does the same | remove the MIA code, `kind: removed`, `status: removed` |
 
-Each decision is a new line in `changes` with `mia`, `base`, `jira` (the update ticket) and a note.
+Each decision is a new first line in `changes` (newest first) with `mia`, `base`, `jira` (the update ticket) and a note.
 Remove `checks` that are no longer valid together with the code. New customizations from this update get their own file named after their ticket.
 
 ## 6. Version and generated files

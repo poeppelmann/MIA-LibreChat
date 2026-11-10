@@ -1,6 +1,6 @@
 import yaml from 'js-yaml';
 import { join, dirname } from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 
@@ -16,6 +16,17 @@ const KIND_TITLES = {
   kept: 'Unchanged after upstream update',
   baseline: 'Baseline (existing when the registry was introduced)',
 };
+const ALLOWED_KEYS = new Set([
+  'jira',
+  'title',
+  'type',
+  'status',
+  'valid_until',
+  'files',
+  'checks',
+  'changes',
+]);
+const ARRAY_KEYS = ['files', 'checks', 'changes'];
 const JIRA = /^MIA-\d+$/;
 const MIA_VERSION = /^\d+\.\d+\.\d+$/;
 const BASE_VERSION = /^v\d+\.\d+\.\d+$/;
@@ -33,24 +44,29 @@ const paths = (root) => ({
   pkg: join(root, 'package.json'),
 });
 
-const compareVersions = (a, b) => {
+export const compareVersions = (a, b) => {
   const [x, y] = [a, b].map((v) => v.replace(/^v/, '').split('.').map(Number));
   return x.reduce((acc, n, i) => acc || n - y[i], 0);
 };
 
 const parseEntry = (text, slug) => {
-  const match = text.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
+  const match = text.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
   if (!match) {
     throw new Error(`${slug}: front matter missing`);
   }
-  return { slug, ...yaml.load(match[1]), body: match[2].trim() };
+  const front = yaml.load(match[1]);
+  if (front === null || typeof front !== 'object' || Array.isArray(front)) {
+    throw new Error(`${slug}: front matter must be a mapping`);
+  }
+  return { slug, ...front, body: match[2].trim() };
 };
+
+const entryFiles = (root) => readdirSync(paths(root).entries).sort();
 
 export const loadEntries = (root) => {
   const dir = paths(root).entries;
-  return readdirSync(dir)
+  return entryFiles(root)
     .filter((name) => name.endsWith('.md'))
-    .sort()
     .map((name) => parseEntry(readFileSync(join(dir, name), 'utf8'), name.replace(/\.md$/, '')));
 };
 
@@ -64,11 +80,13 @@ const parseCheck = (line) => {
   return m[1] ? { op: 'contains', path: m[2], text: m[3] } : { op: m[4], path: m[5] };
 };
 
-const latestChange = (entry) =>
-  entry.changes.reduce((best, c) => (compareVersions(c.mia, best.mia) > 0 ? c : best));
+const latestChange = (entry) => entry.changes[0];
 
 const validateChange = (entry, change, index) => {
   const at = `${entry.slug} changes[${index}]`;
+  if (change === null || typeof change !== 'object' || Array.isArray(change)) {
+    return [`${at}: must be a mapping with mia, base, kind, jira and note`];
+  }
   return [
     !MIA_VERSION.test(change.mia ?? '') && `${at}: mia must look like 2.3.0`,
     !BASE_VERSION.test(change.base ?? '') && `${at}: base must look like v0.8.7`,
@@ -80,19 +98,40 @@ const validateChange = (entry, change, index) => {
   ];
 };
 
+const validateStructure = (entry) => [
+  ...Object.keys(entry)
+    .filter((key) => key !== 'slug' && key !== 'body' && !ALLOWED_KEYS.has(key))
+    .map((key) => `${entry.slug}: unknown key "${key}" (allowed: ${[...ALLOWED_KEYS].join(', ')})`),
+  ...ARRAY_KEYS.filter((key) => key in entry && !Array.isArray(entry[key])).map(
+    (key) => `${entry.slug}: ${key} must be a list`,
+  ),
+];
+
+const validateOrder = (entry, changes) =>
+  changes
+    .slice(1)
+    .map((c, i) => [changes[i], c])
+    .filter(
+      ([newer, older]) => MIA_VERSION.test(newer?.mia ?? '') && MIA_VERSION.test(older?.mia ?? ''),
+    )
+    .filter(([newer, older]) => compareVersions(newer.mia, older.mia) < 0)
+    .map(() => `${entry.slug}: changes must be listed newest first`);
+
 export const validateEntry = (entry, version) => {
-  const changes = Array.isArray(entry.changes) ? entry.changes : [];
-  const checks = Array.isArray(entry.checks) ? entry.checks : [];
-  const files = Array.isArray(entry.files) ? entry.files : [];
+  const structureErrors = validateStructure(entry);
+  const list = (key) => (Array.isArray(entry[key]) ? entry[key] : []);
+  const [changes, checks, files] = [list('changes'), list('checks'), list('files')];
   const slugOk = entry.jira ? entry.slug === entry.jira : entry.slug.startsWith('baseline-');
   const changeErrors = changes.flatMap((c, i) => validateChange(entry, c, i));
+  const wellFormed = changes.length > 0 && !changeErrors.some(Boolean);
   const newerThanRelease = changes.filter(
-    (c) => MIA_VERSION.test(c.mia ?? '') && compareVersions(c.mia, version) > 0,
+    (c) => MIA_VERSION.test(c?.mia ?? '') && compareVersions(c.mia, version) > 0,
   );
-  const removedNow =
-    changes.length > 0 && !changeErrors.some(Boolean) && latestChange(entry).kind === 'removed';
+  const removedAnywhere = changes.some((c) => c?.kind === 'removed');
+  const removedLatest = wellFormed && latestChange(entry).kind === 'removed';
 
   return [
+    ...structureErrors,
     !slugOk &&
       `${entry.slug}: file name must equal the Jira key, or start with "baseline-" when jira is empty`,
     entry.jira && !JIRA.test(entry.jira) && `${entry.slug}: jira must look like MIA-254`,
@@ -104,21 +143,25 @@ export const validateEntry = (entry, version) => {
       !entry.valid_until &&
       `${entry.slug}: valid_until (removal condition) is required`,
     files.length === 0 && `${entry.slug}: files must list at least one path`,
+    entry.status !== 'removed' &&
+      checks.length === 0 &&
+      `${entry.slug}: checks must list at least one check`,
     changes.length === 0 && `${entry.slug}: changes must list at least one entry`,
     ...checks
-      .filter((line) => !parseCheck(line))
+      .filter((line) => typeof line !== 'string' || !parseCheck(line))
       .map((line) => `${entry.slug}: unparsable check "${line}"`),
     ...changeErrors,
+    ...(wellFormed ? validateOrder(entry, changes) : []),
     ...newerThanRelease.map(
       (c) => `${entry.slug}: change ${c.mia} is newer than docs/mia/VERSION ${version}`,
     ),
-    removedNow &&
+    removedAnywhere &&
       entry.status !== 'removed' &&
-      `${entry.slug}: latest change is "removed" but status is "${entry.status}"`,
+      `${entry.slug}: has a "removed" change but status is "${entry.status}"`,
     entry.status === 'removed' &&
-      changes.length > 0 &&
-      !removedNow &&
-      `${entry.slug}: status is "removed" but latest change is not`,
+      wellFormed &&
+      !removedLatest &&
+      `${entry.slug}: status is "removed" but the newest change (first in the list) is not "removed"`,
   ].filter(Boolean);
 };
 
@@ -131,8 +174,11 @@ export const validate = (root) => {
   const duplicates = entries.filter(
     (e, i) => e.jira && entries.findIndex((o) => o.jira === e.jira) !== i,
   );
+  const strays = entryFiles(root).filter((name) => !name.endsWith('.md') && !name.startsWith('.'));
   return [
     ...versionErrors,
+    ...(entries.length === 0 ? ['docs/mia/customizations has no entries'] : []),
+    ...strays.map((name) => `docs/mia/customizations/${name}: only .md files are read`),
     ...entries.flatMap((e) => validateEntry(e, version)),
     ...duplicates.map((e) => `${e.slug}: Jira key used by more than one entry`),
   ];
@@ -159,8 +205,15 @@ const runCheck = (root, tag, check) => {
   return null;
 };
 
+const requireTag = (root, tag) => {
+  const found = spawnSync('git', ['rev-parse', '--verify', '--quiet', gitRef(tag)], { cwd: root });
+  if (found.status !== 0) {
+    throw new Error(`upstream tag ${tag} not found locally; fetch it first`);
+  }
+};
+
 export const check = (root, tag) => {
-  git(root, ['rev-parse', '--verify', '--quiet', gitRef(tag)]);
+  requireTag(root, tag);
   const results = loadEntries(root)
     .filter((e) => e.status !== 'removed')
     .flatMap((e) => (e.checks ?? []).map((line) => ({ slug: e.slug, check: parseCheck(line) })))
@@ -177,6 +230,7 @@ const parseNameStatus = (output) =>
     .map(([status, from, to]) => ({ status: status[0], paths: [from, to].filter(Boolean) }));
 
 export const review = (root, oldTag, newTag) => {
+  [oldTag, newTag].forEach((tag) => requireTag(root, tag));
   const changed = parseNameStatus(
     git(root, ['diff', '--name-status', '-M', gitRef(oldTag), gitRef(newTag)]),
   );
@@ -193,6 +247,22 @@ export const review = (root, oldTag, newTag) => {
       const touched = changed.filter((c) => c.paths.some((p) => owned.has(p)));
       return { slug: e.slug, title: e.title, touched };
     });
+};
+
+export const tagState = (root, tag, remote = 'origin') => {
+  const result = spawnSync('git', ['ls-remote', '--exit-code', '--tags', remote, gitRef(tag)], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+  if (result.status === 0) {
+    return 'exists';
+  }
+  if (result.status === 2) {
+    return 'free';
+  }
+  throw new Error(
+    `cannot determine whether tag ${tag} exists on ${remote}: ${result.stderr.trim()}`,
+  );
 };
 
 export const release = (root) => {
@@ -294,6 +364,15 @@ export const generate = (root, { verify = false } = {}) => {
 
 const printErrors = (errors) => errors.forEach((e) => console.error(`FAIL ${e}`));
 
+const withValidRegistry = (run) => (root, args) => {
+  const errors = validate(root);
+  if (errors.length > 0) {
+    printErrors(errors);
+    return 1;
+  }
+  return run(root, args);
+};
+
 const commands = {
   validate: (root) => {
     const errors = validate(root);
@@ -301,13 +380,13 @@ const commands = {
     console.log(`Registry validation: ${errors.length === 0 ? 'ok' : `${errors.length} error(s)`}`);
     return errors.length === 0 ? 0 : 1;
   },
-  generate: (root, args) => {
+  generate: withValidRegistry((root, args) => {
     const verify = args.includes('--check');
     const stale = generate(root, { verify });
     stale.forEach((f) => console.error(`FAIL ${f} is out of date; run npm run mia:generate`));
     return stale.length === 0 ? 0 : 1;
-  },
-  check: (root, [tag]) => {
+  }),
+  check: withValidRegistry((root, [tag]) => {
     if (!tag) {
       console.error('usage: registry.mjs check <upstream-tag>');
       return 2;
@@ -315,9 +394,9 @@ const commands = {
     const { ok, failures } = check(root, tag);
     failures.forEach((f) => console.error(`FAIL [${f.slug}] ${f.error}`));
     console.log(`Customization check against ${tag}: ${ok} ok, ${failures.length} failed`);
-    return failures.length === 0 ? 0 : 1;
-  },
-  review: (root, [oldTag, newTag]) => {
+    return failures.length === 0 && ok > 0 ? 0 : 1;
+  }),
+  review: withValidRegistry((root, [oldTag, newTag]) => {
     if (!oldTag || !newTag) {
       console.error('usage: registry.mjs review <old-tag> <new-tag>');
       return 2;
@@ -332,8 +411,17 @@ const commands = {
       `${touched.length} of ${result.length} customizations touch files changed upstream (${oldTag}..${newTag}); the rest are unaffected.`,
     );
     return 0;
+  }),
+  tagfree: (root) => {
+    const tag = `mia-${readVersion(root)}`;
+    const state = tagState(root, tag);
+    console.log(`Git tag ${tag}: ${state}`);
+    if (state === 'exists') {
+      console.error(`FAIL git tag ${tag} already exists; bump docs/mia/VERSION`);
+    }
+    return state === 'free' ? 0 : 1;
   },
-  release: (root) => {
+  release: withValidRegistry((root) => {
     const { mia, librechat, errors } = release(root);
     printErrors(errors);
     if (errors.length === 0) {
@@ -341,7 +429,7 @@ const commands = {
       console.log(`librechat=${librechat}`);
     }
     return errors.length === 0 ? 0 : 1;
-  },
+  }),
 };
 
 const main = () => {
@@ -351,9 +439,14 @@ const main = () => {
     console.error(`usage: registry.mjs <${Object.keys(commands).join('|')}> [args]`);
     process.exit(2);
   }
-  process.exit(run(rootDir, args));
+  try {
+    process.exit(run(rootDir, args));
+  } catch (error) {
+    console.error(`FAIL ${error.message}`);
+    process.exit(1);
+  }
 };
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main();
 }
